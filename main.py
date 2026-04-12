@@ -9,6 +9,7 @@ from app.api.feishu_webhook import router as feishu_router
 from app.api.health import router as health_router
 from app.api.web_chat import router as chat_router
 from app.api.settings import router as settings_router
+from app.api.backtest_page import router as backtest_router
 from app.monitor.scheduler import start_scheduler, stop_scheduler
 
 # 配置日志
@@ -48,6 +49,7 @@ app.include_router(health_router)
 app.include_router(feishu_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
+app.include_router(backtest_router)
 
 
 @app.get("/")
