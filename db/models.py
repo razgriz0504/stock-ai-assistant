@@ -58,6 +58,35 @@ class UserPreference(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class ScoringRun(Base):
+    """打分版本记录"""
+    __tablename__ = "scoring_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False)
+    code = Column(Text, nullable=False)
+    period = Column(String(20), default="1y")
+    trigger = Column(String(20), default="manual")  # "manual" / "scheduled"
+    stock_count = Column(Integer, default=0)
+    status = Column(String(20), default="running")  # "running", "completed", "failed"
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ScoringResult(Base):
+    """单只股票的打分结果"""
+    __tablename__ = "scoring_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, nullable=False, index=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    score = Column(Float, nullable=True)
+    rating = Column(String(5), default="")
+    price = Column(Float, nullable=True)
+    change_pct = Column(Float, nullable=True)
+    details_json = Column(Text, default="")  # JSON: {"MACD": {...}, ...}
+    error = Column(Text, default="")
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     Base.metadata.create_all(bind=engine)

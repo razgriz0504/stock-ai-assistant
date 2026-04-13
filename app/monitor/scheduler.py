@@ -80,3 +80,63 @@ def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
         logger.info("Scheduler stopped")
+
+
+# ─── 打分定时任务 ───
+
+def add_scoring_job(hour: int = 16, minute: int = 30):
+    """添加/更新打分定时任务，美东时间每个交易日执行"""
+    scheduler.add_job(
+        _run_scoring_job,
+        CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=ET),
+        id="scoring_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"Scoring job scheduled at {hour:02d}:{minute:02d} ET (mon-fri)")
+
+
+def remove_scoring_job():
+    """移除打分定时任务"""
+    try:
+        scheduler.remove_job("scoring_scheduled")
+        logger.info("Scoring job removed")
+    except Exception:
+        pass
+
+
+async def _run_scoring_job():
+    """定时打分任务：从 DB 读取最新策略代码 + watchlist，执行打分"""
+    import json
+    from db.models import SessionLocal, ScoringRun, UserPreference
+
+    logger.info("Scheduled scoring job triggered")
+    db = SessionLocal()
+    try:
+        # 读取最近一次的策略代码
+        last_run = db.query(ScoringRun).order_by(ScoringRun.id.desc()).first()
+        if not last_run or not last_run.code:
+            logger.warning("No previous scoring code found, skipping scheduled run")
+            return
+
+        # 读取 watchlist
+        pref = db.query(UserPreference).filter(
+            UserPreference.feishu_user_id == "web_default"
+        ).first()
+        symbols = json.loads(pref.watchlist) if pref and pref.watchlist else []
+        if not symbols:
+            logger.warning("Watchlist empty, skipping scheduled run")
+            return
+
+        # 执行打分
+        from app.scoring.scorer import run_scoring
+        result = run_scoring(last_run.code, symbols,
+                           period=last_run.period or "1y",
+                           trigger="scheduled")
+        if result["success"]:
+            logger.info(f"Scheduled scoring completed: v{result['version']}, {len(result['results'])} stocks")
+        else:
+            logger.error(f"Scheduled scoring failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"Scheduled scoring job error: {e}", exc_info=True)
+    finally:
+        db.close()

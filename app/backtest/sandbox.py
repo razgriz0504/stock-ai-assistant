@@ -25,8 +25,12 @@ BLOCKED_CALLS = {
 }
 
 
-def check_code_safety(code: str) -> tuple:
+def check_code_safety(code: str, entry_func: str = "strategy") -> tuple:
     """AST 静态安全检查
+
+    Args:
+        code: 用户代码
+        entry_func: 入口函数名，F1 为 'strategy'，F2 为 'score'
 
     Returns:
         (is_safe: bool, error_message: str)
@@ -36,7 +40,7 @@ def check_code_safety(code: str) -> tuple:
     except SyntaxError as e:
         return False, f"语法错误: {e}"
 
-    has_strategy_func = False
+    has_entry_func = False
 
     for node in ast.walk(tree):
         # 检查 import 语句
@@ -54,30 +58,35 @@ def check_code_safety(code: str) -> tuple:
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in BLOCKED_CALLS:
                 return False, f"禁止调用函数: {node.func.id}"
-        # 检查是否包含 strategy 函数定义
-        elif isinstance(node, ast.FunctionDef) and node.name == 'strategy':
-            has_strategy_func = True
+        # 检查是否包含指定入口函数定义
+        elif isinstance(node, ast.FunctionDef) and node.name == entry_func:
+            has_entry_func = True
 
-    if not has_strategy_func:
-        return False, "代码中必须包含 def strategy(data): 函数"
+    if not has_entry_func:
+        return False, f"代码中必须包含 def {entry_func}(data): 函数"
 
     return True, ""
 
 
-def run_user_strategy(code: str, df: pd.DataFrame, timeout: int = 30) -> dict:
+def run_user_strategy(code: str, df: pd.DataFrame, timeout: int = 30,
+                      entry_func: str = "strategy",
+                      output_mode: str = "list") -> dict:
     """在子进程中安全执行用户策略代码
 
     Args:
         code: 用户 Python 策略代码
         df: 历史数据 DataFrame
         timeout: 超时秒数
+        entry_func: 入口函数名 ('strategy' or 'score')
+        output_mode: 输出模式 ('list' for F1 signals, 'dict' for F2 scoring)
 
     Returns:
-        {"success": True, "signals": [...]}
+        output_mode='list': {"success": True, "signals": [...]}
+        output_mode='dict': {"success": True, "result": {...}}
         {"success": False, "error": "..."}
     """
     # 1. AST 安全检查
-    is_safe, error_msg = check_code_safety(code)
+    is_safe, error_msg = check_code_safety(code, entry_func=entry_func)
     if not is_safe:
         return {"success": False, "error": error_msg}
 
@@ -90,7 +99,9 @@ def run_user_strategy(code: str, df: pd.DataFrame, timeout: int = 30) -> dict:
         tmp.close()
 
         # 3. 构造子进程 wrapper 代码
-        wrapper_code = _build_wrapper(code, tmp.name)
+        wrapper_code = _build_wrapper(code, tmp.name,
+                                       call_func=entry_func,
+                                       output_mode=output_mode)
 
         # 4. 构造安全的环境变量（最小化）
         safe_env = {
@@ -119,21 +130,28 @@ def run_user_strategy(code: str, df: pd.DataFrame, timeout: int = 30) -> dict:
                 error = "策略执行失败（未知错误）"
             return {"success": False, "error": error}
 
-        # 6. 解析 signals
+        # 6. 解析输出
         stdout = result.stdout.strip()
         if not stdout:
-            return {"success": False, "error": "策略函数没有返回有效的信号数据"}
+            return {"success": False, "error": "策略函数没有返回有效数据"}
 
-        signals = json.loads(stdout)
-        if not isinstance(signals, list):
-            return {"success": False, "error": "策略返回值格式错误：需要返回 Series/列表"}
+        parsed = json.loads(stdout)
 
-        return {"success": True, "signals": signals}
+        if output_mode == "dict":
+            if not isinstance(parsed, dict):
+                return {"success": False, "error": "打分函数返回值格式错误：需要返回 dict"}
+            if "score" not in parsed:
+                return {"success": False, "error": "打分函数返回值必须包含 'score' 字段"}
+            return {"success": True, "result": parsed}
+        else:
+            if not isinstance(parsed, list):
+                return {"success": False, "error": "策略返回值格式错误：需要返回 Series/列表"}
+            return {"success": True, "signals": parsed}
 
     except subprocess.TimeoutExpired:
         return {"success": False, "error": f"策略执行超时（{timeout}秒），请检查是否存在死循环"}
     except json.JSONDecodeError:
-        return {"success": False, "error": "策略输出解析失败，请确保 strategy() 返回 pandas Series"}
+        return {"success": False, "error": "策略输出解析失败，请检查函数返回值"}
     except Exception as e:
         logger.error(f"Sandbox execution error: {e}")
         return {"success": False, "error": f"沙箱执行异常: {str(e)}"}
@@ -145,8 +163,15 @@ def run_user_strategy(code: str, df: pd.DataFrame, timeout: int = 30) -> dict:
             pass
 
 
-def _build_wrapper(user_code: str, csv_path: str) -> str:
-    """构造子进程执行的 wrapper 代码"""
+def _build_wrapper(user_code: str, csv_path: str,
+                   call_func: str = "strategy",
+                   output_mode: str = "list") -> str:
+    """构造子进程执行的 wrapper 代码
+
+    Args:
+        call_func: 子进程调用的函数名
+        output_mode: "list" -> signals.tolist() (F1), "dict" -> json.dumps (F2)
+    """
     # 将路径中的反斜杠转义
     safe_path = csv_path.replace('\\', '\\\\')
 
@@ -159,6 +184,20 @@ import resource
 resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
 """
 
+    if output_mode == "dict":
+        output_code = f"""
+_result = {call_func}(data)
+print(json.dumps(_result))
+"""
+    else:
+        output_code = f"""
+_signals = {call_func}(data)
+if not hasattr(_signals, 'tolist'):
+    print(json.dumps(list(_signals)))
+else:
+    print(json.dumps(_signals.tolist()))
+"""
+
     wrapper = f"""import sys
 import json
 import pandas as pd
@@ -168,12 +207,5 @@ import math
 data = pd.read_csv("{safe_path}")
 
 {user_code}
-
-_signals = strategy(data)
-
-if not hasattr(_signals, 'tolist'):
-    print(json.dumps(list(_signals)))
-else:
-    print(json.dumps(_signals.tolist()))
-"""
+{output_code}"""
     return wrapper
