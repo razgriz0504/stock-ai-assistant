@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from litellm import completion
 
 from config import settings
@@ -60,7 +61,7 @@ async def chat(prompt: str, system_prompt: str = "", model: str = "") -> str:
         if use_model in _CUSTOM_API_KEY:
             kwargs["api_key"] = os.environ.get(_CUSTOM_API_KEY[use_model], "")
 
-        response = completion(**kwargs)
+        response = await asyncio.to_thread(completion, **kwargs)
         return response.choices[0].message.content
     except Exception as e:
         logger.error(f"LLM call failed ({use_model}): {e}")

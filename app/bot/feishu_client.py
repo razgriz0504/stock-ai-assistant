@@ -1,4 +1,5 @@
 """飞书 API 客户端 - 消息发送（文本/图片/卡片）"""
+import json
 import logging
 import time
 import httpx
@@ -48,7 +49,7 @@ async def send_text(chat_id: str, text: str):
     body = {
         "receive_id": chat_id,
         "msg_type": "text",
-        "content": f'{{"text": {__import__("json").dumps(text, ensure_ascii=False)}}}',
+        "content": json.dumps({"text": text}, ensure_ascii=False),
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -87,7 +88,7 @@ async def send_image(chat_id: str, image_path: str):
     body = {
         "receive_id": chat_id,
         "msg_type": "image",
-        "content": f'{{"image_key": "{image_key}"}}',
+        "content": json.dumps({"image_key": image_key}, ensure_ascii=False),
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(
@@ -106,7 +107,7 @@ async def reply_text(message_id: str, text: str):
     headers = await _get_headers()
     body = {
         "msg_type": "text",
-        "content": f'{{"text": {__import__("json").dumps(text, ensure_ascii=False)}}}',
+        "content": json.dumps({"text": text}, ensure_ascii=False),
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(

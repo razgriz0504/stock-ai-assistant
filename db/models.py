@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime
+from datetime import datetime, timezone
 
 # 数据库文件放在项目根目录的 db/ 下，使用绝对路径避免工作目录问题
 _BASE_DIR = Path(__file__).resolve().parent
@@ -24,7 +24,7 @@ class MonitorRule(Base):
     threshold = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True)
     feishu_user_id = Column(String(100), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     triggered_at = Column(DateTime, nullable=True)
     description = Column(String(200), default="")
 
@@ -43,7 +43,7 @@ class BacktestRecord(Base):
     total_trades = Column(Integer, nullable=True)
     win_rate = Column(Float, nullable=True)
     report_text = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     feishu_user_id = Column(String(100), default="")
 
 
@@ -55,7 +55,7 @@ class UserPreference(Base):
     feishu_user_id = Column(String(100), nullable=False, unique=True)
     default_model = Column(String(50), default="")
     watchlist = Column(Text, default="")  # JSON: ["AAPL","TSLA"]
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 class ScoringRun(Base):
@@ -69,7 +69,7 @@ class ScoringRun(Base):
     trigger = Column(String(20), default="manual")  # "manual" / "scheduled"
     stock_count = Column(Integer, default=0)
     status = Column(String(20), default="running")  # "running", "completed", "failed"
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class ScoringResult(Base):

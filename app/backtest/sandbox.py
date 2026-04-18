@@ -21,7 +21,16 @@ ALLOWED_IMPORTS = {
 # 危险函数调用黑名单
 BLOCKED_CALLS = {
     'exec', 'eval', 'open', '__import__', 'compile',
-    'globals', 'locals', 'getattr', 'setattr',
+    'globals', 'locals', 'getattr', 'setattr', 'delattr',
+    'breakpoint', 'exit', 'quit',
+}
+
+# 禁止访问的 dunder 属性（防止沙箱逃逸）
+BLOCKED_ATTRS = {
+    '__subclasses__', '__bases__', '__mro__', '__class__',
+    '__globals__', '__builtins__', '__import__', '__loader__',
+    '__spec__', '__code__', '__func__', '__self__',
+    '__module__', '__dict__', '__weakref__',
 }
 
 
@@ -58,6 +67,10 @@ def check_code_safety(code: str, entry_func: str = "strategy") -> tuple:
         elif isinstance(node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id in BLOCKED_CALLS:
                 return False, f"禁止调用函数: {node.func.id}"
+        # 检查危险属性访问（防止 dunder 链逃逸）
+        elif isinstance(node, ast.Attribute):
+            if node.attr in BLOCKED_ATTRS:
+                return False, f"禁止访问属性: {node.attr}"
         # 检查是否包含指定入口函数定义
         elif isinstance(node, ast.FunctionDef) and node.name == entry_func:
             has_entry_func = True

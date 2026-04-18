@@ -32,12 +32,16 @@ class StockAnalyzer:
 
     # ==================== 技术指标计算 ====================
 
-    def calculate_ma(self, periods: list = [5, 10, 20, 60, 120]):
+    def calculate_ma(self, periods: list = None):
+        if periods is None:
+            periods = [5, 10, 20, 60, 120]
         for period in periods:
             self.data[f'MA{period}'] = self.data['Close'].rolling(window=period).mean()
         self.indicators['MA'] = periods
 
-    def calculate_ema(self, periods: list = [12, 26]):
+    def calculate_ema(self, periods: list = None):
+        if periods is None:
+            periods = [12, 26]
         for period in periods:
             self.data[f'EMA{period}'] = self.data['Close'].ewm(span=period, adjust=False).mean()
         self.indicators['EMA'] = periods

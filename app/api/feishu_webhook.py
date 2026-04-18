@@ -1,7 +1,9 @@
 """飞书 Webhook 接收端 - 处理飞书事件回调"""
+import asyncio
 import json
 import logging
 import hashlib
+from collections import OrderedDict
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -11,8 +13,8 @@ from app.bot.message_handler import handle_message
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 消息去重缓存（简单 set，单进程场景够用）
-_processed_messages: set = set()
+# 消息去重缓存（LRU 策略，单进程场景够用）
+_processed_messages: OrderedDict = OrderedDict()
 _MAX_CACHE_SIZE = 1000
 
 
@@ -20,10 +22,10 @@ def _deduplicate(message_id: str) -> bool:
     """返回 True 表示是重复消息，应该跳过"""
     if message_id in _processed_messages:
         return True
-    _processed_messages.add(message_id)
-    # 防止缓存无限增长
-    if len(_processed_messages) > _MAX_CACHE_SIZE:
-        _processed_messages.clear()
+    _processed_messages[message_id] = True
+    # LRU 淘汰：只移除最旧的条目
+    while len(_processed_messages) > _MAX_CACHE_SIZE:
+        _processed_messages.popitem(last=False)
     return False
 
 
@@ -71,8 +73,7 @@ async def feishu_webhook(request: Request):
 
             if text:
                 # 立即返回 200，然后在后台处理（避免飞书 3 秒超时）
-                import asyncio
-                asyncio.get_event_loop().create_task(
+                asyncio.create_task(
                     handle_message(chat_id, message_id, sender_id, text)
                 )
 

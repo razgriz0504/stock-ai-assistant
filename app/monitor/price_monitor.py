@@ -1,6 +1,6 @@
 """价格监控引擎 - 规则管理 + 条件检测"""
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from db.models import SessionLocal, MonitorRule
@@ -133,7 +133,7 @@ def check_all_monitors() -> list[dict]:
 
             if is_triggered:
                 rule.is_active = False  # 触发后自动关闭
-                rule.triggered_at = datetime.utcnow()
+                rule.triggered_at = datetime.now(timezone.utc)
                 triggered.append({
                     "rule_id": rule.id,
                     "symbol": rule.symbol,

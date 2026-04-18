@@ -14,7 +14,7 @@ WEB_USER_ID = "web_default"
 
 
 class WatchlistUpdate(BaseModel):
-    stocks: list
+    stocks: list[str]
 
 
 @router.get("/api/watchlist")

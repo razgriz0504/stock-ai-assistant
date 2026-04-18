@@ -141,8 +141,8 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
     report = "\n".join(lines)
 
     # 保存到数据库
+    db = SessionLocal()
     try:
-        db = SessionLocal()
         record = BacktestRecord(
             symbol=symbol,
             strategy_name=strategy.name,
@@ -156,9 +156,10 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
         )
         db.add(record)
         db.commit()
-        db.close()
     except Exception as e:
         logger.error(f"Failed to save backtest record: {e}")
+    finally:
+        db.close()
 
     return report
 
