@@ -1,27 +1,22 @@
-"""投研周报页面 - 路由 + 内联 HTML（大盘综述 + 行业板块 + 个股评分）"""
-import asyncio
+"""投研周报页面 - 版本选择 + 只读查看 + PDF 导出"""
 import json
 import logging
-from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
-from db.models import SessionLocal, UserPreference
-from app.report.weekly_report import (
-    get_report_section_market,
-    get_report_section_sector,
-    get_report_section_stocks,
-)
+from db.models import SessionLocal, WeeklyReport
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-WEB_USER_ID = "web_default"
 
-
-class RefreshRequest(BaseModel):
-    force: bool = False
+def _get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 @router.get("/scoring", response_class=HTMLResponse)
@@ -29,48 +24,69 @@ async def scoring_page():
     return _build_html()
 
 
-@router.get("/api/report/section/{section}")
-async def get_report_section(section: str):
-    """按 section 加载周报数据"""
-    if section == "market":
-        return await get_report_section_market()
-    elif section == "sector":
-        return await get_report_section_sector()
-    elif section == "stocks":
-        db = SessionLocal()
-        try:
-            pref = db.query(UserPreference).filter(
-                UserPreference.feishu_user_id == WEB_USER_ID
-            ).first()
-            watchlist = json.loads(pref.watchlist) if pref and pref.watchlist else []
-            return await get_report_section_stocks(watchlist)
-        finally:
-            db.close()
-    return {"error": "Unknown section"}
-
-
-@router.post("/api/report/refresh")
-async def refresh_report(req: RefreshRequest = RefreshRequest(force=False)):
-    """强制刷新整个周报"""
-    db = SessionLocal()
-    try:
-        pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
-        ).first()
-        watchlist = json.loads(pref.watchlist) if pref and pref.watchlist else []
-    finally:
-        db.close()
-
-    market, sector, stocks = await asyncio.gather(
-        get_report_section_market(),
-        get_report_section_sector(),
-        get_report_section_stocks(watchlist),
+@router.get("/api/report/versions")
+async def list_versions(db: Session = Depends(_get_db)):
+    """获取所有已完成报告的版本列表"""
+    reports = (
+        db.query(WeeklyReport)
+        .filter(WeeklyReport.status == "completed")
+        .order_by(WeeklyReport.version.desc())
+        .all()
     )
+    return [
+        {
+            "id": r.id,
+            "version": r.version,
+            "report_date": r.report_date.isoformat() if r.report_date else None,
+            "model_name": r.model_name,
+            "trigger": r.trigger,
+        }
+        for r in reports
+    ]
+
+
+@router.get("/api/report/{report_id}")
+async def get_report(report_id: int, db: Session = Depends(_get_db)):
+    """获取指定报告的完整数据"""
+    report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
+    if not report:
+        return {"error": "Report not found"}
+    if report.status != "completed":
+        return {"error": f"Report status is {report.status}"}
+
     return {
-        "success": True,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "sections": {"market": market, "sector": sector, "stocks": stocks},
+        "id": report.id,
+        "version": report.version,
+        "report_date": report.report_date.isoformat() if report.report_date else None,
+        "model_name": report.model_name,
+        "trigger": report.trigger,
+        "market": {
+            "indices": json.loads(report.index_data) if report.index_data else [],
+            "ai_market_summary": report.ai_market_summary or "",
+        },
+        "sector": {
+            "sectors": json.loads(report.sector_data) if report.sector_data else [],
+            "ai_sector_summary": report.ai_sector_summary or "",
+        },
+        "stocks": {
+            "watchlist_scores": json.loads(report.watchlist_scores) if report.watchlist_scores else [],
+            "hot_stock_scores": json.loads(report.hot_stock_scores) if report.hot_stock_scores else [],
+        },
     }
+
+
+@router.get("/api/report/latest")
+async def get_latest_report(db: Session = Depends(_get_db)):
+    """获取最新一份已完成报告"""
+    report = (
+        db.query(WeeklyReport)
+        .filter(WeeklyReport.status == "completed")
+        .order_by(WeeklyReport.version.desc())
+        .first()
+    )
+    if not report:
+        return {"error": "No completed report available"}
+    return await get_report(report.id, db=db)
 
 
 def _build_html() -> str:
@@ -85,7 +101,6 @@ def _build_html() -> str:
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-system, sans-serif; min-height: 100vh; }
 
-/* Header */
 .page-wrap { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
 .head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid #e8e4de; }
 .head-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: #c9774a; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
@@ -94,8 +109,16 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .head h1 span { color: #c9774a; }
 .head-date { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #6b6560; margin-top: 8px; }
 .head-right { display: flex; align-items: center; gap: 12px; }
-.btn-refresh { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 8px 16px; border-radius: 6px; border: 1px solid #d4cfc7; background: #fff; color: #1a1a1a; cursor: pointer; }
-.btn-refresh:hover { border-color: #c9774a; color: #c9774a; }
+
+/* Buttons */
+.btn { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 8px 16px; border-radius: 6px; border: 1px solid #d4cfc7; background: #fff; color: #1a1a1a; cursor: pointer; transition: all .15s; }
+.btn:hover { border-color: #c9774a; color: #c9774a; }
+.btn-primary { background: #c9774a; color: #fff; border-color: #c9774a; }
+.btn-primary:hover { background: #b5683e; border-color: #b5683e; color: #fff; }
+
+/* Version selector */
+.ver-select { font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 8px 12px; border-radius: 6px; border: 1px solid #d4cfc7; background: #fff; color: #1a1a1a; cursor: pointer; min-width: 160px; }
+.ver-select:focus { outline: none; border-color: #c9774a; }
 
 /* Section headers */
 .sec-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px; }
@@ -162,13 +185,29 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .sub-title { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; }
 .hot-tag { font-family: 'JetBrains Mono', monospace; font-size: 9px; padding: 1px 6px; border-radius: 3px; background: rgba(124,58,237,0.06); color: #7c3aed; margin-left: 4px; letter-spacing: 0.5px; }
 
-/* Loading */
+/* Loading & Empty */
 .loading-box { text-align: center; padding: 32px 0; color: #a8a29e; font-size: 14px; }
+.empty-box { text-align: center; padding: 60px 0; }
+.empty-box .empty-icon { font-size: 48px; margin-bottom: 16px; color: #d4cfc7; }
+.empty-box p { color: #6b6560; font-size: 14px; margin-bottom: 16px; }
 
 /* Links */
 .head-subtitle { color: #6b6560; font-size: 13px; margin-bottom: 20px; }
 .head-subtitle a { color: #c9774a; text-decoration: none; }
 .head-subtitle a:hover { text-decoration: underline; }
+
+/* Report meta bar */
+.meta-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a8a29e; }
+.meta-item { display: flex; align-items: center; gap: 4px; }
+
+/* PDF export styles - page-break */
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff; }
+  .page-wrap { padding: 20px; }
+  .sec-head { page-break-after: avoid; }
+  .ai-box, .idx-grid, .sector-tbl, .stock-grid { page-break-inside: avoid; }
+}
 
 @media (max-width: 900px) {
   .idx-grid, .stock-grid { grid-template-columns: 1fr 1fr; }
@@ -181,19 +220,27 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 </style>
 </head>
 <body>
-<div class="page-wrap">
+<div class="page-wrap" id="report-content">
 
   <div class="head">
     <div>
       <div class="head-label">Weekly Intelligence</div>
       <h1>投研<span>周报</span></h1>
       <div class="head-date" id="report-date">Loading...</div>
+      <div class="meta-bar" id="meta-bar" style="display:none;">
+        <span class="meta-item" id="meta-version"></span>
+        <span class="meta-item" id="meta-model"></span>
+        <span class="meta-item" id="meta-trigger"></span>
+      </div>
     </div>
-    <div class="head-right">
-      <button class="btn-refresh" onclick="refreshAll()">&#x21bb; 刷新</button>
+    <div class="head-right no-print">
+      <select class="ver-select" id="ver-select" onchange="onVersionChange()">
+        <option value="">选择版本...</option>
+      </select>
+      <button class="btn" onclick="exportPDF()">PDF</button>
+      <a href="/report-admin" class="btn">管理</a>
     </div>
   </div>
-  <p class="head-subtitle"><a href="/watchlist">管理关注列表</a></p>
 
   <!-- Section 1: Market Overview -->
   <div class="sec-head">
@@ -227,15 +274,17 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
+/* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
 function chgStr(v) { return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
 function fmtPrice(v) { return v != null ? '$' + v.toFixed(2) : '-'; }
 function badgeCls(r) { r = r.toLowerCase(); if (r === 'aa' || r === 'a') return 'a'; if (r === 'b') return 'b'; return 'c'; }
-function momentumCls(m) { if (m === '强势') return 'strong'; if (m === '偏强') return 'mid'; if (m === '偏弱') return 'weak'; return 'mid'; }
 
+/* ─── Rendering ─── */
 function renderMarket(data) {
-  const idxHtml = data.indices.map(idx =>
+  const idxHtml = (data.indices || []).map(idx =>
     `<div class="idx-card">
       <div class="idx-name">${idx.name}</div>
       <div class="idx-symbol">${idx.symbol}</div>
@@ -254,7 +303,7 @@ function renderMarket(data) {
 }
 
 function renderSector(data) {
-  const rows = data.sectors.map(s =>
+  const rows = (data.sectors || []).map(s =>
     `<tr>
       <td><span class="sector-name">${s.name}</span><span class="sector-etf">${s.symbol}</span></td>
       <td class="chg ${chgClass(s.weekly_change_pct)}">${chgStr(s.weekly_change_pct)}</td>
@@ -276,8 +325,8 @@ function renderSector(data) {
 }
 
 function renderStocks(data) {
-  function cardHtml(stocks, showMomentum) {
-    return stocks.map(s => {
+  function cardHtml(stocks) {
+    return (stocks || []).map(s => {
       let techHtml = '';
       if (s.tech) {
         techHtml = Object.entries(s.tech).map(([k, v]) =>
@@ -299,43 +348,128 @@ function renderStocks(data) {
 
   document.getElementById('section-stocks').innerHTML =
     `<div class="sub-head"><span class="sub-title">关注列表</span></div>` +
-    `<div class="stock-grid">${cardHtml(data.watchlist_scores, false)}</div>` +
+    `<div class="stock-grid">${cardHtml(data.watchlist_scores)}</div>` +
     `<div class="sub-head"><span class="sub-title">本周热门股 <span class="hot-tag">AUTO</span></span></div>` +
-    `<div class="stock-grid">${cardHtml(data.hot_stock_scores, true)}</div>`;
+    `<div class="stock-grid">${cardHtml(data.hot_stock_scores)}</div>`;
 }
 
-async function loadSection(section) {
+function showEmpty() {
+  const html = `<div class="empty-box">
+    <div class="empty-icon">&#x1f4ca;</div>
+    <p>暂无已生成的周报</p>
+    <a href="/report-admin" class="btn btn-primary">前往管理页面生成</a>
+  </div>`;
+  ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+    document.getElementById(id).innerHTML = '';
+  });
+  document.querySelector('.page-wrap').insertAdjacentHTML('beforeend', html);
+}
+
+/* ─── Data Loading ─── */
+async function loadVersions() {
   try {
-    const resp = await fetch('/api/report/section/' + section);
-    const data = await resp.json();
-    if (section === 'market') renderMarket(data);
-    else if (section === 'sector') renderSector(data);
-    else if (section === 'stocks') renderStocks(data);
+    const resp = await fetch('/api/report/versions');
+    const versions = await resp.json();
+    const sel = document.getElementById('ver-select');
+    sel.innerHTML = '<option value="">选择版本...</option>';
+    versions.forEach(v => {
+      const date = v.report_date ? v.report_date.slice(0, 10) : '';
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = `v${v.version} - ${date} (${v.model_name || ''}, ${v.trigger === 'scheduled' ? '定时' : '手动'})`;
+      sel.appendChild(opt);
+    });
+    return versions;
   } catch (e) {
-    document.getElementById('section-' + section).innerHTML =
-      '<div class="loading-box">加载失败: ' + e.message + '</div>';
+    console.error('loadVersions error:', e);
+    return [];
   }
 }
 
-async function refreshAll() {
-  ['market', 'sector', 'stocks'].forEach(s => {
-    document.getElementById('section-' + s).innerHTML = '<div class="loading-box">加载中...</div>';
-  });
-  await loadSection('market');
-  await loadSection('sector');
-  await loadSection('stocks');
+async function loadReport(reportId) {
+  try {
+    const resp = await fetch(`/api/report/${reportId}`);
+    const data = await resp.json();
+    if (data.error) {
+      ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+        document.getElementById(id).innerHTML = `<div class="loading-box">${data.error}</div>`;
+      });
+      return;
+    }
+    // Update meta
+    const date = data.report_date ? data.report_date.slice(0, 10) : '';
+    document.getElementById('report-date').textContent = date;
+    const metaBar = document.getElementById('meta-bar');
+    metaBar.style.display = 'flex';
+    document.getElementById('meta-version').textContent = 'v' + data.version;
+    document.getElementById('meta-model').textContent = data.model_name || '';
+    document.getElementById('meta-trigger').textContent = data.trigger === 'scheduled' ? '定时生成' : '手动生成';
+
+    renderMarket(data.market);
+    renderSector(data.sector);
+    renderStocks(data.stocks);
+  } catch (e) {
+    console.error('loadReport error:', e);
+    ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+      document.getElementById(id).innerHTML = '<div class="loading-box">加载失败</div>';
+    });
+  }
 }
 
-// Init
+function onVersionChange() {
+  const sel = document.getElementById('ver-select');
+  const id = sel.value;
+  if (id) {
+    // Remove any empty-box
+    const empty = document.querySelector('.empty-box');
+    if (empty) empty.remove();
+    ['section-market', 'section-sector', 'section-stocks'].forEach(s => {
+      document.getElementById(s).innerHTML = '<div class="loading-box">加载中...</div>';
+    });
+    loadReport(id);
+  }
+}
+
+/* ─── PDF Export ─── */
+function exportPDF() {
+  const element = document.getElementById('report-content');
+  const ver = document.getElementById('meta-version').textContent || 'report';
+  const opt = {
+    margin: [10, 10, 10, 10],
+    filename: `weekly-report-${ver}.pdf`,
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+  };
+  html2pdf().set(opt).from(element).save();
+}
+
+/* ─── Init ─── */
 (async function() {
-  const now = new Date();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  document.getElementById('report-date').textContent =
-    weekStart.toISOString().slice(0, 10) + ' — ' + now.toISOString().slice(0, 10) + ' · Week ' + Math.ceil(now.getDate() / 7);
-  await loadSection('market');
-  await loadSection('sector');
-  await loadSection('stocks');
+  const versions = await loadVersions();
+
+  // Check URL param for version
+  const urlParams = new URLSearchParams(window.location.search);
+  const verParam = urlParams.get('v');
+
+  if (verParam) {
+    // Find report by version number
+    const match = versions.find(v => v.version === parseInt(verParam));
+    if (match) {
+      document.getElementById('ver-select').value = match.id;
+      await loadReport(match.id);
+      return;
+    }
+  }
+
+  // Default: load latest
+  if (versions.length > 0) {
+    document.getElementById('ver-select').value = versions[0].id;
+    await loadReport(versions[0].id);
+  } else {
+    showEmpty();
+  }
 })();
 </script>
 </body>

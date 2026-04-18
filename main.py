@@ -13,7 +13,8 @@ from app.api.settings import router as settings_router
 from app.api.backtest_page import router as backtest_router
 from app.api.watchlist_page import router as watchlist_router
 from app.api.scoring_page import router as scoring_router
-from app.monitor.scheduler import start_scheduler, stop_scheduler
+from app.api.report_admin_page import router as report_admin_router
+from app.monitor.scheduler import start_scheduler, stop_scheduler, restore_report_schedule
 
 # 配置日志
 logging.basicConfig(
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("Database initialized")
     start_scheduler()
+    restore_report_schedule()
     logger.info("Scheduler started")
     logger.info(f"Default LLM: {settings.default_llm}")
 
@@ -55,6 +57,7 @@ app.include_router(settings_router)
 app.include_router(backtest_router)
 app.include_router(watchlist_router)
 app.include_router(scoring_router)
+app.include_router(report_admin_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -113,6 +116,11 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-icon">&#x2699;</div>
         <div class="card-title">Settings</div>
         <div class="card-desc">Configure LLM models and API keys</div>
+    </a>
+    <a class="card" href="/report-admin">
+        <div class="card-icon">&#x1f4cb;</div>
+        <div class="card-title">周报管理</div>
+        <div class="card-desc">Manage weekly reports, prompts & schedules</div>
     </a>
     <a class="card" href="/docs">
         <div class="card-icon">&#x1f4d6;</div>

@@ -88,18 +88,51 @@ class ScoringResult(Base):
 
 
 class WeeklyReport(Base):
-    """投研周报缓存"""
+    """投研周报 - 版本化存储"""
     __tablename__ = "weekly_reports"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False, index=True)
     report_date = Column(DateTime, index=True)
-    index_data = Column(Text, default="")       # JSON: 三大指数数据+sparkline
-    sector_data = Column(Text, default="")      # JSON: 行业ETF表现
-    watchlist_scores = Column(Text, default="")  # JSON: watchlist评分结果
-    hot_stock_scores = Column(Text, default="")  # JSON: 热门股评分结果
-    ai_market_summary = Column(Text, default="") # AI大盘综述
-    ai_sector_summary = Column(Text, default="") # AI行业分析
+    status = Column(String(20), default="running")   # running / completed / failed
+    trigger = Column(String(20), default="manual")    # manual / scheduled
+    model_name = Column(String(100), default="")       # 生成时使用的 LLM 模型
+    # --- 数据（JSON 存储） ---
+    index_data = Column(Text, default="")              # JSON: 三大指数数据
+    sector_data = Column(Text, default="")             # JSON: 行业ETF表现
+    watchlist_scores = Column(Text, default="")         # JSON: watchlist评分结果
+    hot_stock_scores = Column(Text, default="")         # JSON: 热门股评分结果
+    # --- AI 分析 ---
+    ai_market_summary = Column(Text, default="")        # AI大盘综述
+    ai_sector_summary = Column(Text, default="")        # AI行业分析
+    ai_stocks_summary = Column(Text, default="")        # 预留：个股AI综合分析
+    # --- Prompt 审计 ---
+    market_system_prompt = Column(Text, default="")     # 生成时使用的市场分析 prompt
+    sector_system_prompt = Column(Text, default="")     # 生成时使用的行业分析 prompt
+    stocks_system_prompt = Column(Text, default="")     # 预留：个股分析 prompt
+    # --- 元数据 ---
+    watchlist_used = Column(Text, default="")           # JSON: 生成时使用的 watchlist
+    error_message = Column(Text, default="")            # 失败时的错误信息
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ReportConfig(Base):
+    """报告配置（单例表，id=1）"""
+    __tablename__ = "report_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    # --- 定时生成 ---
+    schedule_enabled = Column(Boolean, default=False)
+    schedule_frequency = Column(String(20), default="weekly")  # weekly / daily
+    schedule_day_of_week = Column(String(10), default="fri")
+    schedule_hour = Column(Integer, default=17)                # ET 时区
+    schedule_minute = Column(Integer, default=0)
+    # --- 默认 Prompt ---
+    default_market_system_prompt = Column(Text, default="")
+    default_sector_system_prompt = Column(Text, default="")
+    default_stocks_system_prompt = Column(Text, default="")
+    # --- 元数据 ---
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
 def init_db():

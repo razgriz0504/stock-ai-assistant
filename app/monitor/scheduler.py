@@ -140,3 +140,89 @@ async def _run_scoring_job():
         logger.error(f"Scheduled scoring job error: {e}", exc_info=True)
     finally:
         db.close()
+
+
+# ─── 周报定时任务 ───
+
+_REPORT_JOB_MAX_RETRIES = 2  # 最大重试次数
+
+
+def add_report_job(day_of_week: str = "fri", hour: int = 17, minute: int = 0):
+    """添加/更新周报定时生成任务"""
+    scheduler.add_job(
+        _run_report_job,
+        CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute, timezone=ET),
+        id="report_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"Report job scheduled at {day_of_week} {hour:02d}:{minute:02d} ET")
+
+
+def remove_report_job():
+    """移除周报定时生成任务"""
+    try:
+        scheduler.remove_job("report_scheduled")
+        logger.info("Report job removed")
+    except Exception:
+        pass
+
+
+async def _run_report_job(retry_count: int = 0):
+    """定时周报生成任务（含重试机制）"""
+    import json
+    from db.models import SessionLocal, UserPreference
+    from app.report.weekly_report import generate_full_report
+
+    logger.info(f"Scheduled report job triggered (attempt {retry_count + 1})")
+    db = SessionLocal()
+    try:
+        # 读取 watchlist
+        pref = db.query(UserPreference).filter(
+            UserPreference.feishu_user_id == "web_default"
+        ).first()
+        watchlist = json.loads(pref.watchlist) if pref and pref.watchlist else []
+
+        result = await generate_full_report(db, trigger="scheduled", watchlist=watchlist)
+
+        if "error" in result:
+            # 生成失败，判断是否需要重试
+            if retry_count < _REPORT_JOB_MAX_RETRIES:
+                logger.warning(f"Report generation failed, retrying ({retry_count + 1}/{_REPORT_JOB_MAX_RETRIES}): {result['error']}")
+                await asyncio.sleep(30)  # 等待 30s 后重试
+                await _run_report_job(retry_count=retry_count + 1)
+            else:
+                logger.error(f"Report generation failed after {retry_count + 1} attempts: {result['error']}")
+        else:
+            logger.info(f"Scheduled report completed: v{result['version']}")
+    except Exception as e:
+        if retry_count < _REPORT_JOB_MAX_RETRIES:
+            logger.warning(f"Report job error, retrying ({retry_count + 1}/{_REPORT_JOB_MAX_RETRIES}): {e}")
+            await asyncio.sleep(30)
+            await _run_report_job(retry_count=retry_count + 1)
+        else:
+            logger.error(f"Report job failed after {retry_count + 1} attempts: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+def restore_report_schedule():
+    """启动时从 DB 恢复周报定时任务配置"""
+    from db.models import SessionLocal, ReportConfig
+    from app.report.weekly_report import get_or_create_report_config
+
+    db = SessionLocal()
+    try:
+        config = get_or_create_report_config(db)
+        if config.schedule_enabled:
+            add_report_job(
+                day_of_week=config.schedule_day_of_week,
+                hour=config.schedule_hour,
+                minute=config.schedule_minute,
+            )
+            logger.info("Report schedule restored from DB config")
+        else:
+            logger.info("Report schedule is disabled in DB config")
+    except Exception as e:
+        logger.error(f"Failed to restore report schedule: {e}")
+    finally:
+        db.close()

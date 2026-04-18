@@ -6,9 +6,12 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from sqlalchemy.orm import Session
+
 from app.data.yfinance_provider import YFinanceProvider
 from app.analysis.stock_analyzer import StockAnalyzer
-from app.llm.client import chat
+from app.llm.client import chat, get_model
+from db.models import WeeklyReport, ReportConfig
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +40,21 @@ HOT_STOCKS = {
     "BA", "CAT", "HON",
     "PLTR", "SHOP", "SQ", "COIN",
 }
+
+# ─── 默认 Prompt 常量 ───
+
+DEFAULT_MARKET_SYSTEM_PROMPT = (
+    "你是一位资深美股策略分析师。请根据提供的三大指数本周数据，"
+    "撰写一段简洁的中文大盘综述。要求：1)总结本周整体走势 2)分析三大指数表现差异 "
+    "3)提及关键点位 4)展望下周可能走势。控制在200字以内。"
+)
+
+DEFAULT_SECTOR_SYSTEM_PROMPT = (
+    "你是一位行业轮动分析师。请根据提供的行业ETF本周表现数据，分析行业轮动趋势。"
+    "要求：1)指出领涨和领跌板块 2)分析市场风格 3)给出下周配置建议。控制在200字以内。"
+)
+
+DEFAULT_STOCKS_SYSTEM_PROMPT = ""  # 预留：个股综合分析 prompt
 
 yf_provider = YFinanceProvider()
 EXECUTOR = ThreadPoolExecutor(max_workers=5)
@@ -278,10 +296,12 @@ def get_momentum_label(change_pct: float) -> str:
 
 # ─── AI 分析 ───
 
-async def generate_ai_market_summary(index_data: list[dict]) -> str:
+async def generate_ai_market_summary(index_data: list[dict], system_prompt: Optional[str] = None) -> str:
     """调用 LLM 生成大盘综述"""
     if not index_data:
         return "市场数据暂不可用"
+
+    prompt = system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT
 
     parts = []
     for idx in index_data:
@@ -298,23 +318,18 @@ async def generate_ai_market_summary(index_data: list[dict]) -> str:
     )
 
     try:
-        return await chat(
-            user_prompt,
-            system_prompt=(
-                "你是一位资深美股策略分析师。请根据提供的三大指数本周数据，"
-                "撰写一段简洁的中文大盘综述。要求：1)总结本周整体走势 2)分析三大指数表现差异 "
-                "3)提及关键点位 4)展望下周可能走势。控制在200字以内。"
-            ),
-        )
+        return await chat(user_prompt, system_prompt=prompt)
     except Exception as e:
         logger.error(f"AI market summary failed: {e}")
         return "AI 分析暂不可用"
 
 
-async def generate_ai_sector_summary(sector_data: list[dict]) -> str:
+async def generate_ai_sector_summary(sector_data: list[dict], system_prompt: Optional[str] = None) -> str:
     """调用 LLM 生成行业分析"""
     if not sector_data:
         return "行业数据暂不可用"
+
+    prompt = system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT
 
     parts = []
     for sec in sector_data:
@@ -331,13 +346,7 @@ async def generate_ai_sector_summary(sector_data: list[dict]) -> str:
     )
 
     try:
-        return await chat(
-            user_prompt,
-            system_prompt=(
-                "你是一位行业轮动分析师。请根据提供的行业ETF本周表现数据，分析行业轮动趋势。"
-                "要求：1)指出领涨和领跌板块 2)分析市场风格 3)给出下周配置建议。控制在200字以内。"
-            ),
-        )
+        return await chat(user_prompt, system_prompt=prompt)
     except Exception as e:
         logger.error(f"AI sector summary failed: {e}")
         return "AI 分析暂不可用"
@@ -390,3 +399,113 @@ async def get_report_section_stocks(watchlist: Optional[list[str]] = None) -> di
     except Exception as e:
         logger.error(f"Stocks section error: {e}", exc_info=True)
         return {"watchlist_scores": [], "hot_stock_scores": []}
+
+
+# ─── DB 辅助函数 ───
+
+def _get_next_version(db: Session) -> int:
+    """计算下一个报告版本号"""
+    from sqlalchemy import func
+    max_ver = db.query(func.max(WeeklyReport.version)).scalar()
+    return (max_ver or 0) + 1
+
+
+def get_or_create_report_config(db: Session) -> ReportConfig:
+    """获取或创建 ReportConfig 单例（id=1）"""
+    config = db.query(ReportConfig).filter(ReportConfig.id == 1).first()
+    if not config:
+        config = ReportConfig(
+            id=1,
+            default_market_system_prompt=DEFAULT_MARKET_SYSTEM_PROMPT,
+            default_sector_system_prompt=DEFAULT_SECTOR_SYSTEM_PROMPT,
+            default_stocks_system_prompt=DEFAULT_STOCKS_SYSTEM_PROMPT,
+        )
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+    return config
+
+
+def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str]:
+    """从 ReportConfig 解析 prompt，空值回退到默认常量"""
+    market_prompt = config.default_market_system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT
+    sector_prompt = config.default_sector_system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT
+    stocks_prompt = config.default_stocks_system_prompt or DEFAULT_STOCKS_SYSTEM_PROMPT
+    return market_prompt, sector_prompt, stocks_prompt
+
+
+# ─── 全量报告生成（编排器） ───
+
+async def generate_full_report(
+    db: Session,
+    trigger: str = "manual",
+    watchlist: Optional[list[str]] = None,
+) -> dict:
+    """
+    生成完整周报，写入 DB。
+
+    流程：
+    1. 创建 WeeklyReport 行 (status=running)
+    2. 并行获取三大模块数据 + AI 分析
+    3. 序列化 JSON 写入 DB
+    4. 更新 status=completed / failed
+    5. 返回 {"report_id": int, "version": int}
+    """
+    if watchlist is None:
+        watchlist = []
+
+    version = _get_next_version(db)
+    config = get_or_create_report_config(db)
+    market_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
+    model_name = get_model()
+
+    # 1. 创建 DB 行
+    report = WeeklyReport(
+        version=version,
+        report_date=datetime.now(timezone.utc),
+        status="running",
+        trigger=trigger,
+        model_name=model_name,
+        market_system_prompt=market_prompt,
+        sector_system_prompt=sector_prompt,
+        stocks_system_prompt=stocks_prompt,
+        watchlist_used=json.dumps(watchlist),
+    )
+    db.add(report)
+    db.commit()
+    db.refresh(report)
+    report_id = report.id
+
+    try:
+        # 2. 并行获取数据 + AI 分析
+        index_data, sector_data, stocks_data = await asyncio.gather(
+            asyncio.to_thread(fetch_index_data),
+            asyncio.to_thread(fetch_sector_data),
+            get_report_section_stocks(watchlist),
+        )
+
+        # AI 分析（依赖上面的数据）
+        ai_market_summary, ai_sector_summary = await asyncio.gather(
+            generate_ai_market_summary(index_data, system_prompt=market_prompt),
+            generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
+        )
+
+        # 3. 序列化 JSON 并更新 DB
+        report.index_data = json.dumps(index_data, ensure_ascii=False)
+        report.sector_data = json.dumps(sector_data, ensure_ascii=False)
+        report.watchlist_scores = json.dumps(stocks_data.get("watchlist_scores", []), ensure_ascii=False)
+        report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
+        report.ai_market_summary = ai_market_summary
+        report.ai_sector_summary = ai_sector_summary
+        report.status = "completed"
+        db.commit()
+
+        logger.info(f"Report v{version} (id={report_id}) generated successfully")
+        return {"report_id": report_id, "version": version}
+
+    except Exception as e:
+        logger.error(f"Report v{version} (id={report_id}) generation failed: {e}", exc_info=True)
+        report.status = "failed"
+        report.error_message = str(e)
+        db.commit()
+        return {"report_id": report_id, "version": version, "error": str(e)}
