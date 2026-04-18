@@ -107,14 +107,13 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .idx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
 .idx-card { background: #fff; padding: 24px; border: 1px solid #e8e4de; border-radius: 10px; position: relative; }
 .idx-card:hover { border-color: #c9774a; }
-.idx-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #6b6560; margin-bottom: 4px; }
+.idx-name { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 4px; }
 .idx-symbol { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a8a29e; margin-bottom: 16px; }
 .idx-price { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; letter-spacing: -1px; margin-bottom: 8px; }
 .idx-change { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; }
 .idx-change.up { color: #2d6a4f; }
 .idx-change.down { color: #b91c1c; }
-.idx-spark { margin-top: 20px; height: 48px; }
-.idx-spark canvas { width: 100%; height: 100%; display: block; }
+.idx-change-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #a8a29e; margin-top: 4px; }
 
 /* AI Summary */
 .ai-box { position: relative; padding: 20px 20px 20px 28px; background: #fff; border: 1px solid #e8e4de; border-radius: 10px; }
@@ -238,11 +237,11 @@ function momentumCls(m) { if (m === '强势') return 'strong'; if (m === '偏强
 function renderMarket(data) {
   const idxHtml = data.indices.map(idx =>
     `<div class="idx-card">
-      <div class="idx-label">${idx.name}</div>
+      <div class="idx-name">${idx.name}</div>
       <div class="idx-symbol">${idx.symbol}</div>
       <div class="idx-price">${idx.current.toLocaleString()}</div>
       <div class="idx-change ${chgClass(idx.weekly_change_pct)}">${chgStr(idx.weekly_change_pct)}</div>
-      <div class="idx-spark"><canvas id="spark-${idx.symbol}"></canvas></div>
+      <div class="idx-change-label">本周涨跌幅（5日）</div>
     </div>`
   ).join('');
 
@@ -252,14 +251,6 @@ function renderMarket(data) {
       <div class="ai-label">AI MARKET SUMMARY</div>
       <div class="ai-text">${data.ai_market_summary || 'AI 分析暂不可用'}</div>
     </div>`;
-
-  // Draw sparklines
-  data.indices.forEach(idx => {
-    const canvas = document.getElementById('spark-' + idx.symbol);
-    if (!canvas) return;
-    const color = idx.weekly_change_pct >= 0 ? '#2d6a4f' : '#b91c1c';
-    sparkline(canvas, idx.sparkline, color);
-  });
 }
 
 function renderSector(data) {
@@ -311,27 +302,6 @@ function renderStocks(data) {
     `<div class="stock-grid">${cardHtml(data.watchlist_scores, false)}</div>` +
     `<div class="sub-head"><span class="sub-title">本周热门股 <span class="hot-tag">AUTO</span></span></div>` +
     `<div class="stock-grid">${cardHtml(data.hot_stock_scores, true)}</div>`;
-}
-
-function sparkline(canvas, data, color) {
-  const ctx = canvas.getContext('2d');
-  const parent = canvas.parentElement;
-  const w = parent.clientWidth || 280;
-  const h = 48;
-  canvas.width = w * 2; canvas.height = h * 2;
-  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
-  ctx.scale(2, 2);
-  const mn = Math.min(...data), mx = Math.max(...data), rng = mx - mn || 1;
-  const step = w / (data.length - 1);
-  ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-  data.forEach((v, i) => { const px = i * step, py = h - 6 - ((v - mn) / rng) * (h - 12); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); });
-  ctx.stroke();
-  ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
-  ctx.fillStyle = color.replace(')', ',0.06)').replace('rgb', 'rgba');
-  ctx.fill();
-  const lastX = (data.length - 1) * step;
-  const lastY = h - 6 - ((data[data.length - 1] - mn) / rng) * (h - 12);
-  ctx.beginPath(); ctx.arc(lastX, lastY, 2.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
 }
 
 async function loadSection(section) {
