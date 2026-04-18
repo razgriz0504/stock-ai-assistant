@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_MODELS = {
     "gemini": "gemini/gemini-2.0-flash",
-    "gemini3pro": "gemini/gemini-3-pro-preview",
+    "gemini3pro": "gemini/gemini-3.1-pro-preview",
     "gpt-4o": "gpt-4o",
     "gpt-4o-mini": "gpt-4o-mini",
     "qwen": "dashscope/qwen-plus",

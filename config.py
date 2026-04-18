@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     finnhub_api_key: str = ""
 
     # 默认 LLM 模型
-    default_llm: str = "gemini/gemini-3-pro-preview"
+    default_llm: str = "gemini/gemini-3.1-pro-preview"
 
     # 图表临时文件目录
     charts_dir: str = "./charts"
