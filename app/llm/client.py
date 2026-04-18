@@ -35,7 +35,7 @@ _GEMINI_SAFETY_SETTINGS = [
 ]
 
 # Default timeout (seconds) for LLM calls
-_LLM_TIMEOUT = 30
+_LLM_TIMEOUT = 60
 
 _current_model: str = settings.default_llm
 
@@ -70,6 +70,7 @@ async def chat(prompt: str, system_prompt: str = "", model: str = "") -> str:
             "model": use_model,
             "messages": messages,
             "timeout": _LLM_TIMEOUT,
+            "request_timeout": _LLM_TIMEOUT,
         }
 
         if use_model in _CUSTOM_API_BASE:
