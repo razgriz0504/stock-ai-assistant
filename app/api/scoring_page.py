@@ -200,13 +200,24 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .meta-bar { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a8a29e; }
 .meta-item { display: flex; align-items: center; gap: 4px; }
 
-/* PDF export styles - page-break */
+/* PDF export - print styles */
 @media print {
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .no-print { display: none !important; }
-  body { background: #fff; }
-  .page-wrap { padding: 20px; }
-  .sec-head { page-break-after: avoid; }
+  body { background: #fff; font-size: 12px; }
+  .page-wrap { max-width: 100%; padding: 0; margin: 0; }
+  .head { margin-bottom: 20px; padding-bottom: 12px; }
+  .head h1 { font-size: 24px; }
+  .sec-head { page-break-after: avoid; margin-bottom: 12px; margin-top: 24px; }
   .ai-box, .idx-card, .sector-tbl, .stock-card { page-break-inside: avoid; break-inside: avoid; }
+  .idx-grid { gap: 8px; }
+  .idx-card { padding: 12px; }
+  .idx-price { font-size: 20px; }
+  .stock-grid { gap: 8px; }
+  .stock-card { padding: 12px; }
+  .stock-score-val { font-size: 28px; }
+  .sector-tbl { font-size: 11px; }
+  .sector-tbl th, .sector-tbl td { padding: 6px 8px; }
 }
 
 @media (max-width: 900px) {
@@ -273,7 +284,6 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 /* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
@@ -430,31 +440,7 @@ function onVersionChange() {
 
 /* ─── PDF Export ─── */
 function exportPDF() {
-  const element = document.getElementById('report-content');
-  const ver = document.getElementById('meta-version').textContent || 'report';
-
-  // 记住原始宽度，导出时固定宽度避免截断
-  const origWidth = element.style.width;
-  const origOverflow = element.style.overflow;
-  element.style.width = element.scrollWidth + 'px';
-  element.style.overflow = 'visible';
-
-  const opt = {
-    margin: [8, 8, 8, 8],
-    filename: `weekly-report-${ver}.pdf`,
-    image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true, letterRendering: true, width: element.scrollWidth, windowWidth: element.scrollWidth },
-    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-  };
-
-  html2pdf().set(opt).from(element).save().then(() => {
-    element.style.width = origWidth;
-    element.style.overflow = origOverflow;
-  }).catch(() => {
-    element.style.width = origWidth;
-    element.style.overflow = origOverflow;
-  });
+  window.print();
 }
 
 /* ─── Init ─── */
