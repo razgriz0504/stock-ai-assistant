@@ -45,9 +45,11 @@ HOT_STOCKS = {
 
 DEFAULT_MARKET_SYSTEM_PROMPT = (
     "你是一位资深美股策略分析师。数据将以 JSON 数组格式提供，每个元素包含："
-    "name(指数名), symbol(代码), current(当前点位), weekly_change_pct(周涨跌幅%), recent_5d_close(近5日收盘列表)。\n"
+    "name(指数名), symbol(代码), current(当前点位), weekly_change_pct(周涨跌幅%), "
+    "recent_5d_close(近5日收盘列表), vol_ratios_5d(近5日量比，即当日成交额/20日均量，可选), "
+    "forward_pe(预测市盈率，可选), trailing_pe(滚动市盈率，可选)。\n"
     "请根据数据撰写一段简洁的中文大盘综述。要求：1)总结本周整体走势 2)分析三大指数表现差异 "
-    "3)提及关键点位 4)展望下周可能走势。控制在200字以内。"
+    "3)结合量价关系判断动能 4)展望下周可能走势。控制在200字以内。"
 )
 
 DEFAULT_SECTOR_SYSTEM_PROMPT = (
@@ -66,11 +68,12 @@ EXECUTOR = ThreadPoolExecutor(max_workers=5)
 # ─── 数据获取 ───
 
 def fetch_index_data() -> list[dict]:
-    """获取三大指数本周数据（5日历史 + sparkline）"""
+    """获取三大指数本周数据（5日历史 + 成交量 + 估值）"""
     results = []
 
     def _fetch_one(symbol: str) -> Optional[dict]:
         try:
+            # 5日行情
             df = yf_provider.get_history(symbol, "5d")
             if df.empty:
                 return None
@@ -79,6 +82,29 @@ def fetch_index_data() -> list[dict]:
             sparkline = df["Close"].tolist()
             sparkline_dates = [d.strftime("%m-%d") for d in df.index]
             weekly_change = ((current["Close"] - prev_close) / prev_close) * 100 if prev_close else 0
+
+            # 近5日量比（相对20日均量）
+            df_vol = yf_provider.get_history(symbol, "1mo")
+            vol_ratios = []
+            if not df_vol.empty and len(df_vol) >= 5:
+                vol_ma20 = df_vol["Volume"].rolling(20).mean()
+                for i in range(-5, 0):
+                    if i < len(df_vol) and i <= -1:
+                        ma = vol_ma20.iloc[i] if not vol_ma20.iloc[i] != vol_ma20.iloc[i] else 1  # NaN check
+                        vol = df_vol["Volume"].iloc[i]
+                        vol_ratios.append(round(vol / ma, 2) if ma and ma > 0 else 1.0)
+
+            # Forward P/E（通过 yfinance Ticker 的 info 字典获取）
+            pe_info = {}
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(symbol)
+                info = ticker.info
+                pe_info["forward_pe"] = info.get("forwardPE")
+                pe_info["trailing_pe"] = info.get("trailingPE")
+            except Exception:
+                pass
+
             return {
                 "symbol": symbol,
                 "name": INDEX_SYMBOLS.get(symbol, symbol),
@@ -86,6 +112,9 @@ def fetch_index_data() -> list[dict]:
                 "weekly_change_pct": round(weekly_change, 2),
                 "sparkline": [round(v, 2) for v in sparkline],
                 "sparkline_dates": sparkline_dates,
+                "vol_ratios": vol_ratios[-5:] if vol_ratios else [],
+                "forward_pe": pe_info.get("forward_pe"),
+                "trailing_pe": pe_info.get("trailing_pe"),
             }
         except Exception as e:
             logger.warning(f"Failed to fetch index {symbol}: {e}")
@@ -309,13 +338,22 @@ async def generate_ai_market_summary(index_data: list[dict], system_prompt: Opti
     # 构建纯数据列表，不加任何描述性文字
     data = []
     for idx in index_data:
-        data.append({
+        item = {
             "name": idx["name"],
             "symbol": idx["symbol"],
             "current": idx["current"],
             "weekly_change_pct": idx["weekly_change_pct"],
             "recent_5d_close": idx["sparkline"][-5:],
-        })
+        }
+        # 成交量数据（近5日量比）
+        if idx.get("vol_ratios"):
+            item["vol_ratios_5d"] = idx["vol_ratios"]
+        # 估值数据
+        if idx.get("forward_pe"):
+            item["forward_pe"] = idx["forward_pe"]
+        if idx.get("trailing_pe"):
+            item["trailing_pe"] = idx["trailing_pe"]
+        data.append(item)
 
     user_prompt = json.dumps(data, ensure_ascii=False)
 
