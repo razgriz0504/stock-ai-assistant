@@ -108,7 +108,7 @@ h1 { color: #4fc3f7; margin-bottom: 8px; font-size: 24px; }
 </head>
 <body>
 <h1>Watchlist</h1>
-<p class="subtitle">管理你的关注股票列表 | <a href="/scoring">前往选股打分 &rarr;</a></p>
+<p class="subtitle">管理你的关注股票列表 | <a href="/scoring">前往投研周报 &rarr;</a></p>
 
 <div class="input-row">
     <input type="text" id="stock-input" placeholder="输入股票代码，多个用逗号分隔（如 AAPL, TSLA, NVDA）"

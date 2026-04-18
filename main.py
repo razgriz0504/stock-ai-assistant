@@ -100,9 +100,9 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-desc">Paste Python strategy code, run backtests with charts</div>
     </a>
     <a class="card" href="/scoring">
-        <div class="card-icon">&#x1f3af;</div>
-        <div class="card-title">Stock Scoring</div>
-        <div class="card-desc">Score stocks with custom strategies, track history & trends</div>
+        <div class="card-icon">&#x1f4ca;</div>
+        <div class="card-title">投研周报</div>
+        <div class="card-desc">Weekly market overview, sector analysis & stock scoring</div>
     </a>
     <a class="card" href="/watchlist">
         <div class="card-icon">&#x2b50;</div>

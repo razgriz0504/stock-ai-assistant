@@ -87,6 +87,21 @@ class ScoringResult(Base):
     error = Column(Text, default="")
 
 
+class WeeklyReport(Base):
+    """投研周报缓存"""
+    __tablename__ = "weekly_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    report_date = Column(DateTime, index=True)
+    index_data = Column(Text, default="")       # JSON: 三大指数数据+sparkline
+    sector_data = Column(Text, default="")      # JSON: 行业ETF表现
+    watchlist_scores = Column(Text, default="")  # JSON: watchlist评分结果
+    hot_stock_scores = Column(Text, default="")  # JSON: 热门股评分结果
+    ai_market_summary = Column(Text, default="") # AI大盘综述
+    ai_sector_summary = Column(Text, default="") # AI行业分析
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 def init_db():
     """初始化数据库，创建所有表"""
     Base.metadata.create_all(bind=engine)
