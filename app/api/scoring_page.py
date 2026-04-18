@@ -476,18 +476,38 @@ function exportPDF() {
     el.style.boxSizing = 'border-box';
   });
 
-  // Grid → flexbox，卡片固定宽度适配 3 列
+  // Grid → 按行分组，每行 3 个卡片放在一个不跨页的容器内
   clone.querySelectorAll('.idx-grid, .stock-grid').forEach(grid => {
-    grid.style.display = 'flex';
-    grid.style.flexWrap = 'wrap';
-    grid.style.gap = GAP + 'px';
+    const cards = Array.from(grid.children);
+    grid.innerHTML = '';
+    grid.style.display = 'block';
     grid.style.padding = '0';
     grid.style.margin = '0';
-    Array.from(grid.children).forEach(card => {
-      card.style.width = CARD_W + 'px';
-      card.style.flex = '0 0 ' + CARD_W + 'px';
-      card.style.boxSizing = 'border-box';
-    });
+
+    for (let i = 0; i < cards.length; i += 3) {
+      const row = document.createElement('div');
+      row.style.display = 'flex';
+      row.style.flexWrap = 'nowrap';
+      row.style.gap = GAP + 'px';
+      row.style.marginBottom = GAP + 'px';
+      row.style.pageBreakInside = 'avoid';
+      row.style.breakInside = 'avoid';
+
+      for (let j = 0; j < 3 && i + j < cards.length; j++) {
+        const card = cards[i + j];
+        card.style.width = CARD_W + 'px';
+        card.style.flex = '0 0 ' + CARD_W + 'px';
+        card.style.boxSizing = 'border-box';
+        row.appendChild(card);
+      }
+      grid.appendChild(row);
+    }
+  });
+
+  // AI 摘要框、行业表格也不跨页
+  clone.querySelectorAll('.ai-box, .sector-tbl, .sec-head').forEach(el => {
+    el.style.pageBreakInside = 'avoid';
+    el.style.breakInside = 'avoid';
   });
 
   // 行业表格也缩窄
