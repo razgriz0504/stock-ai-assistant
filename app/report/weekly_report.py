@@ -44,27 +44,15 @@ HOT_STOCKS = {
 # ─── 默认 Prompt 常量 ───
 
 DEFAULT_MARKET_SYSTEM_PROMPT = (
-    "你是一位资深美股策略分析师。数据将以 JSON 数组格式提供，每个元素包含："
-    "name(指数名), symbol(代码), current(当前点位), weekly_change_pct(周涨跌幅%), "
-    "recent_5d_close(近5日收盘列表), vol_ratios_5d(近5日量比，即当日成交额/20日均量，可选), "
-    "forward_pe(预测市盈率，可选), trailing_pe(滚动市盈率，可选)。\n\n"
-    "重要：当数据包含 forward_pe 或 trailing_pe 时，你必须调用自身知识库获取该指数近5年的 "
-    "P/E 历史统计（5年均值 PE_avg、5年最低 PE_min、5年最高 PE_max），用于以下估值分析：\n"
-    "1. 均值偏离度 = (PE_now - PE_avg) / PE_avg，判断当前估值相对历史的位置\n"
-    "2. 支撑/压力界定：PE_min 附近为估值支撑，PE_avg 为中枢，靠近 PE_max 为压力区\n"
-    "3. 估值容错率 = (PE_max - PE_now) / (PE_max - PE_min)，衡量向上空间\n\n"
-    "请根据数据撰写中文大盘综述，要求：\n"
-    "1) 总结本周整体走势及三大指数表现差异\n"
-    "2) 结合量价关系（vol_ratios_5d）判断动能方向\n"
-    "3) 若有 P/E 数据，结合历史估值区间分析当前位置的偏估程度\n"
-    "4) 综合以上给出下周走势展望。控制在300字以内。"
+    "数据格式说明：JSON 数组，每个元素包含 name(指数名), symbol(代码), current(当前点位), "
+    "weekly_change_pct(周涨跌幅%), recent_5d_close(近5日收盘列表), "
+    "vol_ratios_5d(近5日量比，可选), forward_pe(预测市盈率，可选), trailing_pe(滚动市盈率，可选)。"
 )
 
 DEFAULT_SECTOR_SYSTEM_PROMPT = (
-    "你是一位行业轮动分析师。数据将以 JSON 数组格式提供，按周涨跌幅排序，每个元素包含："
-    "name(行业名), symbol(ETF代码), weekly_change_pct(周涨跌幅%), chg_15d(15日涨跌幅%), "
-    "chg_30d(30日涨跌幅%), current(当前价), vol_ratio(量比)。\n"
-    "请分析行业轮动趋势。要求：1)指出领涨和领跌板块 2)分析市场风格 3)给出下周配置建议。控制在200字以内。"
+    "数据格式说明：JSON 数组，按周涨跌幅排序，每个元素包含 name(行业名), symbol(ETF代码), "
+    "weekly_change_pct(周涨跌幅%), chg_15d(15日涨跌幅%), chg_30d(30日涨跌幅%), "
+    "current(当前价), vol_ratio(量比)。"
 )
 
 DEFAULT_STOCKS_SYSTEM_PROMPT = ""  # 预留：个股综合分析 prompt
