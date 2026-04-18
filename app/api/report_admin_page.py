@@ -194,6 +194,17 @@ async def get_report_status(report_id: int, db: Session = Depends(_get_db)):
     }
 
 
+@router.delete("/api/admin/reports/{report_id}")
+async def delete_report(report_id: int, db: Session = Depends(_get_db)):
+    """删除指定报告"""
+    report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
+    if not report:
+        return {"error": "Report not found"}
+    db.delete(report)
+    db.commit()
+    return {"success": True}
+
+
 @router.get("/api/admin/prompts")
 async def get_prompts(db: Session = Depends(_get_db)):
     """获取 Prompt 配置"""
@@ -532,6 +543,7 @@ async function loadReports() {
         <td>
           ${r.status === 'completed' ? `<a href="/scoring?v=${r.version}" class="btn btn-sm">查看</a>` : ''}
           ${r.status === 'failed' ? `<span style="color:#b91c1c;font-size:11px;" title="${r.error_message || ''}">失败</span>` : ''}
+          <button class="btn btn-sm btn-danger" onclick="deleteReport(${r.id}, ${r.version})">删除</button>
         </td>
       </tr>`;
     }).join('');
@@ -600,6 +612,22 @@ async function pollStatus(reportId, version) {
     }
   } catch (e) {
     console.error('pollStatus error:', e);
+  }
+}
+
+/* ─── Delete report ─── */
+async function deleteReport(id, version) {
+  if (!confirm(`确认删除报告 v${version}？此操作不可恢复。`)) return;
+  try {
+    const resp = await fetch(`/api/admin/reports/${id}`, { method: 'DELETE' });
+    const data = await resp.json();
+    if (data.success) {
+      await loadReports();
+    } else {
+      alert('删除失败: ' + (data.error || 'unknown'));
+    }
+  } catch (e) {
+    alert('删除失败: ' + e.message);
   }
 }
 

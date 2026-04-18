@@ -44,14 +44,17 @@ HOT_STOCKS = {
 # ─── 默认 Prompt 常量 ───
 
 DEFAULT_MARKET_SYSTEM_PROMPT = (
-    "你是一位资深美股策略分析师。请根据提供的三大指数本周数据，"
-    "撰写一段简洁的中文大盘综述。要求：1)总结本周整体走势 2)分析三大指数表现差异 "
+    "你是一位资深美股策略分析师。数据将以 JSON 数组格式提供，每个元素包含："
+    "name(指数名), symbol(代码), current(当前点位), weekly_change_pct(周涨跌幅%), recent_5d_close(近5日收盘列表)。\n"
+    "请根据数据撰写一段简洁的中文大盘综述。要求：1)总结本周整体走势 2)分析三大指数表现差异 "
     "3)提及关键点位 4)展望下周可能走势。控制在200字以内。"
 )
 
 DEFAULT_SECTOR_SYSTEM_PROMPT = (
-    "你是一位行业轮动分析师。请根据提供的行业ETF本周表现数据，分析行业轮动趋势。"
-    "要求：1)指出领涨和领跌板块 2)分析市场风格 3)给出下周配置建议。控制在200字以内。"
+    "你是一位行业轮动分析师。数据将以 JSON 数组格式提供，按周涨跌幅排序，每个元素包含："
+    "name(行业名), symbol(ETF代码), weekly_change_pct(周涨跌幅%), chg_15d(15日涨跌幅%), "
+    "chg_30d(30日涨跌幅%), current(当前价), vol_ratio(量比)。\n"
+    "请分析行业轮动趋势。要求：1)指出领涨和领跌板块 2)分析市场风格 3)给出下周配置建议。控制在200字以内。"
 )
 
 DEFAULT_STOCKS_SYSTEM_PROMPT = ""  # 预留：个股综合分析 prompt
@@ -297,21 +300,24 @@ def get_momentum_label(change_pct: float) -> str:
 # ─── AI 分析 ───
 
 async def generate_ai_market_summary(index_data: list[dict], system_prompt: Optional[str] = None) -> str:
-    """调用 LLM 生成大盘综述"""
+    """调用 LLM 生成大盘综述，user_prompt 只传纯数据，描述由 system_prompt 控制"""
     if not index_data:
         return "市场数据暂不可用"
 
     prompt = system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT
 
-    parts = []
+    # 构建纯数据列表，不加任何描述性文字
+    data = []
     for idx in index_data:
-        sparkline_str = ", ".join(str(v) for v in idx["sparkline"][-5:])
-        parts.append(
-            f"- {idx['name']} ({idx['symbol']}): 当前 {idx['current']}, "
-            f"周涨跌幅 {idx['weekly_change_pct']:+.2f}%, 近5日收盘 {sparkline_str}"
-        )
+        data.append({
+            "name": idx["name"],
+            "symbol": idx["symbol"],
+            "current": idx["current"],
+            "weekly_change_pct": idx["weekly_change_pct"],
+            "recent_5d_close": idx["sparkline"][-5:],
+        })
 
-    user_prompt = "三大指数本周数据：\n" + "\n".join(parts)
+    user_prompt = json.dumps(data, ensure_ascii=False)
 
     try:
         return await chat(user_prompt, system_prompt=prompt)
@@ -321,21 +327,26 @@ async def generate_ai_market_summary(index_data: list[dict], system_prompt: Opti
 
 
 async def generate_ai_sector_summary(sector_data: list[dict], system_prompt: Optional[str] = None) -> str:
-    """调用 LLM 生成行业分析"""
+    """调用 LLM 生成行业分析，user_prompt 只传纯数据，描述由 system_prompt 控制"""
     if not sector_data:
         return "行业数据暂不可用"
 
     prompt = system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT
 
-    parts = []
+    # 构建纯数据列表，不加任何描述性文字
+    data = []
     for sec in sector_data:
-        parts.append(
-            f"- {sec['name']} ({sec['symbol']}): 周涨跌 {sec['weekly_change_pct']:+.2f}%, "
-            f"15日 {sec['chg_15d']:+.2f}%, 30日 {sec['chg_30d']:+.2f}%, "
-            f"当前价 ${sec['current']}"
-        )
+        data.append({
+            "name": sec["name"],
+            "symbol": sec["symbol"],
+            "weekly_change_pct": sec["weekly_change_pct"],
+            "chg_15d": sec["chg_15d"],
+            "chg_30d": sec["chg_30d"],
+            "current": sec["current"],
+            "vol_ratio": sec.get("vol_ratio", 1.0),
+        })
 
-    user_prompt = "11个行业板块ETF本周表现（按周涨跌幅排序）：\n" + "\n".join(parts)
+    user_prompt = json.dumps(data, ensure_ascii=False)
 
     try:
         return await chat(user_prompt, system_prompt=prompt)
