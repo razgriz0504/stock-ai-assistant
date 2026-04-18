@@ -206,8 +206,14 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
   body { background: #fff; }
   .page-wrap { padding: 20px; }
   .sec-head { page-break-after: avoid; }
-  .ai-box, .idx-grid, .sector-tbl, .stock-grid { page-break-inside: avoid; }
+  .ai-box, .idx-card, .sector-tbl, .stock-card { page-break-inside: avoid; break-inside: avoid; }
 }
+
+/* PDF export: inline-block layout for better html2canvas rendering */
+.pdf-export .idx-grid { display: block; }
+.pdf-export .idx-card { display: inline-block; width: 32.5%; vertical-align: top; margin-bottom: 12px; }
+.pdf-export .stock-grid { display: block; }
+.pdf-export .stock-card { display: inline-block; width: 32.5%; vertical-align: top; margin-bottom: 12px; }
 
 @media (max-width: 900px) {
   .idx-grid, .stock-grid { grid-template-columns: 1fr 1fr; }
@@ -432,15 +438,22 @@ function onVersionChange() {
 function exportPDF() {
   const element = document.getElementById('report-content');
   const ver = document.getElementById('meta-version').textContent || 'report';
+
+  // 临时切换为 PDF 友好布局
+  element.classList.add('pdf-export');
+
   const opt = {
     margin: [10, 10, 10, 10],
     filename: `weekly-report-${ver}.pdf`,
     image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true },
+    html2canvas: { scale: 2, useCORS: true, width: element.scrollWidth, windowWidth: element.scrollWidth },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
   };
-  html2pdf().set(opt).from(element).save();
+  html2pdf().set(opt).from(element).save().then(() => {
+    // 导出完成后恢复原布局
+    element.classList.remove('pdf-export');
+  });
 }
 
 /* ─── Init ─── */
