@@ -451,19 +451,27 @@ function exportPDF() {
   // 移除不需要打印的元素
   clone.querySelectorAll('.no-print').forEach(el => el.remove());
 
-  // A4 纵向：210mm - 16mm 边距 = 194mm ≈ 734px @96dpi
-  // PDF margin 已提供边距，克隆不加 padding 避免挤占内容区
+  // A4 纵向：210mm - 2*8mm margin = 194mm ≈ 734px @96dpi
+  // 必须覆盖 page-wrap 的原始 padding/max-width
   const PDF_WIDTH = 734;
-  const CARD_W = 236;  // (734 - 2*13) / 3 ≈ 236
-  const GAP = 13;
+  const GAP = 10;
+  const CARD_W = Math.floor((PDF_WIDTH - GAP * 2) / 3);  // (734-20)/3 ≈ 238
 
   clone.style.width = PDF_WIDTH + 'px';
   clone.style.maxWidth = PDF_WIDTH + 'px';
   clone.style.padding = '0';
+  clone.style.margin = '0';
   clone.style.boxSizing = 'content-box';
   clone.style.background = '#fff';
 
-  // 强制所有子元素 box-sizing: border-box，确保卡片宽度含 padding/border
+  // 覆盖 page-wrap 内部可能的 padding
+  clone.querySelectorAll('.page-wrap').forEach(el => {
+    el.style.padding = '0';
+    el.style.maxWidth = '100%';
+    el.style.margin = '0';
+  });
+
+  // 强制所有子元素 box-sizing: border-box
   clone.querySelectorAll('*').forEach(el => {
     el.style.boxSizing = 'border-box';
   });
@@ -473,6 +481,8 @@ function exportPDF() {
     grid.style.display = 'flex';
     grid.style.flexWrap = 'wrap';
     grid.style.gap = GAP + 'px';
+    grid.style.padding = '0';
+    grid.style.margin = '0';
     Array.from(grid.children).forEach(card => {
       card.style.width = CARD_W + 'px';
       card.style.flex = '0 0 ' + CARD_W + 'px';
