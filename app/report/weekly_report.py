@@ -1,4 +1,5 @@
 """投研周报引擎 - 每周市场概览 + 行业分析 + 个股评分"""
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone, timedelta
@@ -277,7 +278,7 @@ def get_momentum_label(change_pct: float) -> str:
 
 # ─── AI 分析 ───
 
-def generate_ai_market_summary(index_data: list[dict]) -> str:
+async def generate_ai_market_summary(index_data: list[dict]) -> str:
     """调用 LLM 生成大盘综述"""
     if not index_data:
         return "市场数据暂不可用"
@@ -297,7 +298,7 @@ def generate_ai_market_summary(index_data: list[dict]) -> str:
     )
 
     try:
-        return chat(
+        return await chat(
             user_prompt,
             system_prompt=(
                 "你是一位资深美股策略分析师。请根据提供的三大指数本周数据，"
@@ -310,7 +311,7 @@ def generate_ai_market_summary(index_data: list[dict]) -> str:
         return "AI 分析暂不可用"
 
 
-def generate_ai_sector_summary(sector_data: list[dict]) -> str:
+async def generate_ai_sector_summary(sector_data: list[dict]) -> str:
     """调用 LLM 生成行业分析"""
     if not sector_data:
         return "行业数据暂不可用"
@@ -330,7 +331,7 @@ def generate_ai_sector_summary(sector_data: list[dict]) -> str:
     )
 
     try:
-        return chat(
+        return await chat(
             user_prompt,
             system_prompt=(
                 "你是一位行业轮动分析师。请根据提供的行业ETF本周表现数据，分析行业轮动趋势。"
@@ -344,39 +345,39 @@ def generate_ai_sector_summary(sector_data: list[dict]) -> str:
 
 # ─── 周报主入口 ───
 
-def get_report_section_market() -> dict:
+async def get_report_section_market() -> dict:
     """获取大盘综述 section 数据"""
     try:
-        indices = fetch_index_data()
-        ai_summary = generate_ai_market_summary(indices) if indices else "市场数据暂不可用"
+        indices = await asyncio.to_thread(fetch_index_data)
+        ai_summary = await generate_ai_market_summary(indices) if indices else "市场数据暂不可用"
         return {"indices": indices, "ai_market_summary": ai_summary}
     except Exception as e:
         logger.error(f"Market section error: {e}", exc_info=True)
         return {"indices": [], "ai_market_summary": "数据加载失败"}
 
 
-def get_report_section_sector() -> dict:
+async def get_report_section_sector() -> dict:
     """获取行业板块 section 数据"""
     try:
-        sectors = fetch_sector_data()
-        ai_summary = generate_ai_sector_summary(sectors) if sectors else "行业数据暂不可用"
+        sectors = await asyncio.to_thread(fetch_sector_data)
+        ai_summary = await generate_ai_sector_summary(sectors) if sectors else "行业数据暂不可用"
         return {"sectors": sectors, "ai_sector_summary": ai_summary}
     except Exception as e:
         logger.error(f"Sector section error: {e}", exc_info=True)
         return {"sectors": [], "ai_sector_summary": "数据加载失败"}
 
 
-def get_report_section_stocks(watchlist: Optional[list[str]] = None) -> dict:
+async def get_report_section_stocks(watchlist: Optional[list[str]] = None) -> dict:
     """获取个股评分 section 数据"""
     if watchlist is None:
         watchlist = []
     try:
         # Watchlist scoring
-        watchlist_scores = score_stocks(watchlist, period="3mo") if watchlist else []
+        watchlist_scores = await asyncio.to_thread(score_stocks, watchlist, "3mo") if watchlist else []
 
         # Hot stock selection & scoring
-        hot_symbols = select_hot_stocks(watchlist, top_n=10)
-        hot_stock_scores = score_stocks(hot_symbols, period="3mo") if hot_symbols else []
+        hot_symbols = await asyncio.to_thread(select_hot_stocks, watchlist, 10)
+        hot_stock_scores = await asyncio.to_thread(score_stocks, hot_symbols, "3mo") if hot_symbols else []
 
         # Add momentum labels to hot stocks
         for stock in hot_stock_scores:

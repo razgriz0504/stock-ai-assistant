@@ -1,4 +1,5 @@
 """投研周报页面 - 路由 + 内联 HTML（大盘综述 + 行业板块 + 个股评分）"""
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -32,9 +33,9 @@ async def scoring_page():
 async def get_report_section(section: str):
     """按 section 加载周报数据"""
     if section == "market":
-        return get_report_section_market()
+        return await get_report_section_market()
     elif section == "sector":
-        return get_report_section_sector()
+        return await get_report_section_sector()
     elif section == "stocks":
         db = SessionLocal()
         try:
@@ -42,7 +43,7 @@ async def get_report_section(section: str):
                 UserPreference.feishu_user_id == WEB_USER_ID
             ).first()
             watchlist = json.loads(pref.watchlist) if pref and pref.watchlist else []
-            return get_report_section_stocks(watchlist)
+            return await get_report_section_stocks(watchlist)
         finally:
             db.close()
     return {"error": "Unknown section"}
@@ -60,14 +61,15 @@ async def refresh_report(req: RefreshRequest = RefreshRequest(force=False)):
     finally:
         db.close()
 
+    market, sector, stocks = await asyncio.gather(
+        get_report_section_market(),
+        get_report_section_sector(),
+        get_report_section_stocks(watchlist),
+    )
     return {
         "success": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "sections": {
-            "market": get_report_section_market(),
-            "sector": get_report_section_sector(),
-            "stocks": get_report_section_stocks(watchlist),
-        },
+        "sections": {"market": market, "sector": sector, "stocks": stocks},
     }
 
 
