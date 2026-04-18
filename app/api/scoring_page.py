@@ -238,7 +238,6 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
         <option value="">选择版本...</option>
       </select>
       <button class="btn" onclick="exportPDF()">PDF</button>
-      <a href="/report-admin" class="btn">管理</a>
     </div>
   </div>
 
@@ -356,8 +355,7 @@ function renderStocks(data) {
 function showEmpty() {
   const html = `<div class="empty-box">
     <div class="empty-icon">&#x1f4ca;</div>
-    <p>暂无已生成的周报</p>
-    <a href="/report-admin" class="btn btn-primary">前往管理页面生成</a>
+    <p>暂无已生成的周报，请联系管理员生成</p>
   </div>`;
   ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
     document.getElementById(id).innerHTML = '';

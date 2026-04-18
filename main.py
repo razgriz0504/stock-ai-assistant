@@ -117,11 +117,6 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-title">Settings</div>
         <div class="card-desc">Configure LLM models and API keys</div>
     </a>
-    <a class="card" href="/report-admin">
-        <div class="card-icon">&#x1f4cb;</div>
-        <div class="card-title">周报管理</div>
-        <div class="card-desc">Manage weekly reports, prompts & schedules</div>
-    </a>
     <a class="card" href="/docs">
         <div class="card-icon">&#x1f4d6;</div>
         <div class="card-title">API Docs</div>
