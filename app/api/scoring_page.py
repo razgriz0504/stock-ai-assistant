@@ -284,6 +284,7 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script>
 /* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
@@ -440,7 +441,68 @@ function onVersionChange() {
 
 /* ─── PDF Export ─── */
 function exportPDF() {
-  window.print();
+  const src = document.getElementById('report-content');
+  const ver = document.getElementById('meta-version').textContent || 'report';
+
+  // 克隆 DOM，在克隆上修改布局不影响原页面
+  const clone = src.cloneNode(true);
+  clone.removeAttribute('id');
+
+  // 移除不需要打印的元素
+  clone.querySelectorAll('.no-print').forEach(el => el.remove());
+
+  // 固定宽度，避免 html2canvas 截断
+  clone.style.width = '1100px';
+  clone.style.maxWidth = '1100px';
+  clone.style.padding = '32px';
+  clone.style.background = '#fff';
+
+  // 把 CSS Grid 容器改为 flexbox + 固定宽度（html2canvas 对 flexbox 支持好）
+  clone.querySelectorAll('.idx-grid').forEach(grid => {
+    grid.style.display = 'flex';
+    grid.style.flexWrap = 'wrap';
+    grid.style.gap = '12px';
+    Array.from(grid.children).forEach(card => {
+      card.style.width = '350px';
+      card.style.flex = '0 0 350px';
+    });
+  });
+
+  clone.querySelectorAll('.stock-grid').forEach(grid => {
+    grid.style.display = 'flex';
+    grid.style.flexWrap = 'wrap';
+    grid.style.gap = '12px';
+    Array.from(grid.children).forEach(card => {
+      card.style.width = '350px';
+      card.style.flex = '0 0 350px';
+    });
+  });
+
+  // 临时插入 body（必须可见位置，html2canvas 才能渲染）
+  const wrapper = document.createElement('div');
+  wrapper.style.position = 'fixed';
+  wrapper.style.top = '0';
+  wrapper.style.left = '0';
+  wrapper.style.zIndex = '-1';
+  wrapper.style.opacity = '0';
+  wrapper.style.pointerEvents = 'none';
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+
+  const opt = {
+    margin: [8, 8, 8, 8],
+    filename: `weekly-report-${ver}.pdf`,
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true, width: 1100, windowWidth: 1100 },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+  };
+
+  html2pdf().set(opt).from(clone).save().then(() => {
+    document.body.removeChild(wrapper);
+  }).catch(() => {
+    document.body.removeChild(wrapper);
+  });
 }
 
 /* ─── Init ─── */
