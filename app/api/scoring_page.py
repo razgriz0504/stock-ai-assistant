@@ -209,12 +209,6 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
   .ai-box, .idx-card, .sector-tbl, .stock-card { page-break-inside: avoid; break-inside: avoid; }
 }
 
-/* PDF export: inline-block layout for better html2canvas rendering */
-.pdf-export .idx-grid { display: block; }
-.pdf-export .idx-card { display: inline-block; width: 32.5%; vertical-align: top; margin-bottom: 12px; }
-.pdf-export .stock-grid { display: block; }
-.pdf-export .stock-card { display: inline-block; width: 32.5%; vertical-align: top; margin-bottom: 12px; }
-
 @media (max-width: 900px) {
   .idx-grid, .stock-grid { grid-template-columns: 1fr 1fr; }
   .sector-tbl { font-size: 12px; }
@@ -439,20 +433,59 @@ function exportPDF() {
   const element = document.getElementById('report-content');
   const ver = document.getElementById('meta-version').textContent || 'report';
 
-  // 临时切换为 PDF 友好布局
-  element.classList.add('pdf-export');
+  // 克隆 DOM，避免影响原页面
+  const clone = element.cloneNode(true);
+  clone.id = 'report-content-pdf';
+
+  // 移除不需要打印的元素
+  clone.querySelectorAll('.no-print').forEach(el => el.remove());
+
+  // 把 grid 容器改为 table 布局（html2canvas 对 grid 支持差）
+  clone.querySelectorAll('.idx-grid, .stock-grid').forEach(grid => {
+    const cards = Array.from(grid.children);
+    grid.style.display = 'table';
+    grid.style.width = '100%';
+    grid.style.borderSpacing = '8px';
+    grid.style.borderCollapse = 'separate';
+
+    // 每3个卡片一行
+    let row = null;
+    cards.forEach((card, i) => {
+      if (i % 3 === 0) {
+        row = document.createElement('div');
+        row.style.display = 'table-row';
+        grid.appendChild(row);
+      }
+      const cell = document.createElement('div');
+      cell.style.display = 'table-cell';
+      cell.style.width = '33.33%';
+      cell.style.verticalAlign = 'top';
+      cell.innerHTML = card.innerHTML;
+      // 复制 class 和 style
+      card.classList.forEach(c => cell.classList.add(c));
+      row.appendChild(cell);
+      card.remove();
+    });
+  });
+
+  // 临时挂到 body（隐藏），渲染完再移除
+  clone.style.position = 'absolute';
+  clone.style.left = '-9999px';
+  document.body.appendChild(clone);
 
   const opt = {
     margin: [10, 10, 10, 10],
     filename: `weekly-report-${ver}.pdf`,
     image: { type: 'jpeg', quality: 0.95 },
-    html2canvas: { scale: 2, useCORS: true, width: element.scrollWidth, windowWidth: element.scrollWidth },
+    html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
   };
-  html2pdf().set(opt).from(element).save().then(() => {
-    // 导出完成后恢复原布局
-    element.classList.remove('pdf-export');
+
+  html2pdf().set(opt).from(clone).save().then(() => {
+    document.body.removeChild(clone);
+  }).catch(() => {
+    document.body.removeChild(clone);
   });
 }
 
