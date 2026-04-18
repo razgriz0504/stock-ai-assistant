@@ -452,16 +452,21 @@ function exportPDF() {
   clone.querySelectorAll('.no-print').forEach(el => el.remove());
 
   // A4 纵向：210mm - 16mm 边距 = 194mm ≈ 734px @96dpi
-  // 设置内容区宽度适配 A4，确保不截断
+  // PDF margin 已提供边距，克隆不加 padding 避免挤占内容区
   const PDF_WIDTH = 734;
   const CARD_W = 236;  // (734 - 2*13) / 3 ≈ 236
   const GAP = 13;
 
   clone.style.width = PDF_WIDTH + 'px';
   clone.style.maxWidth = PDF_WIDTH + 'px';
-  clone.style.padding = '20px';
-  clone.style.boxSizing = 'border-box';
+  clone.style.padding = '0';
+  clone.style.boxSizing = 'content-box';
   clone.style.background = '#fff';
+
+  // 强制所有子元素 box-sizing: border-box，确保卡片宽度含 padding/border
+  clone.querySelectorAll('*').forEach(el => {
+    el.style.boxSizing = 'border-box';
+  });
 
   // Grid → flexbox，卡片固定宽度适配 3 列
   clone.querySelectorAll('.idx-grid, .stock-grid').forEach(grid => {
