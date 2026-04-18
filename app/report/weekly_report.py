@@ -311,11 +311,7 @@ async def generate_ai_market_summary(index_data: list[dict], system_prompt: Opti
             f"周涨跌幅 {idx['weekly_change_pct']:+.2f}%, 近5日收盘 {sparkline_str}"
         )
 
-    user_prompt = (
-        "三大指数本周数据：\n"
-        + "\n".join(parts)
-        + "\n\n请撰写本周美股大盘综述，200字以内。"
-    )
+    user_prompt = "三大指数本周数据：\n" + "\n".join(parts)
 
     try:
         return await chat(user_prompt, system_prompt=prompt)
@@ -339,11 +335,7 @@ async def generate_ai_sector_summary(sector_data: list[dict], system_prompt: Opt
             f"当前价 ${sec['current']}"
         )
 
-    user_prompt = (
-        "11个行业板块ETF本周表现（按周涨跌幅排序）：\n"
-        + "\n".join(parts)
-        + "\n\n请分析本周行业轮动趋势并给出配置建议，200字以内。"
-    )
+    user_prompt = "11个行业板块ETF本周表现（按周涨跌幅排序）：\n" + "\n".join(parts)
 
     try:
         return await chat(user_prompt, system_prompt=prompt)
