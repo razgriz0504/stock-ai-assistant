@@ -451,41 +451,39 @@ function exportPDF() {
   // 移除不需要打印的元素
   clone.querySelectorAll('.no-print').forEach(el => el.remove());
 
-  // 固定宽度，避免 html2canvas 截断
-  clone.style.width = '1100px';
-  clone.style.maxWidth = '1100px';
-  clone.style.padding = '32px';
+  // A4 纵向：210mm - 16mm 边距 = 194mm ≈ 734px @96dpi
+  // 设置内容区宽度适配 A4，确保不截断
+  const PDF_WIDTH = 734;
+  const CARD_W = 236;  // (734 - 2*13) / 3 ≈ 236
+  const GAP = 13;
+
+  clone.style.width = PDF_WIDTH + 'px';
+  clone.style.maxWidth = PDF_WIDTH + 'px';
+  clone.style.padding = '20px';
+  clone.style.boxSizing = 'border-box';
   clone.style.background = '#fff';
 
-  // 把 CSS Grid 容器改为 flexbox + 固定宽度（html2canvas 对 flexbox 支持好）
-  clone.querySelectorAll('.idx-grid').forEach(grid => {
+  // Grid → flexbox，卡片固定宽度适配 3 列
+  clone.querySelectorAll('.idx-grid, .stock-grid').forEach(grid => {
     grid.style.display = 'flex';
     grid.style.flexWrap = 'wrap';
-    grid.style.gap = '12px';
+    grid.style.gap = GAP + 'px';
     Array.from(grid.children).forEach(card => {
-      card.style.width = '350px';
-      card.style.flex = '0 0 350px';
+      card.style.width = CARD_W + 'px';
+      card.style.flex = '0 0 ' + CARD_W + 'px';
+      card.style.boxSizing = 'border-box';
     });
   });
 
-  clone.querySelectorAll('.stock-grid').forEach(grid => {
-    grid.style.display = 'flex';
-    grid.style.flexWrap = 'wrap';
-    grid.style.gap = '12px';
-    Array.from(grid.children).forEach(card => {
-      card.style.width = '350px';
-      card.style.flex = '0 0 350px';
-    });
+  // 行业表格也缩窄
+  clone.querySelectorAll('.sector-tbl').forEach(tbl => {
+    tbl.style.width = PDF_WIDTH + 'px';
+    tbl.style.fontSize = '11px';
   });
 
-  // 临时插入 body（必须可见位置，html2canvas 才能渲染）
+  // 临时插入 body（opacity:0 但在文档流中，html2canvas 可渲染）
   const wrapper = document.createElement('div');
-  wrapper.style.position = 'fixed';
-  wrapper.style.top = '0';
-  wrapper.style.left = '0';
-  wrapper.style.zIndex = '-1';
-  wrapper.style.opacity = '0';
-  wrapper.style.pointerEvents = 'none';
+  wrapper.style.cssText = 'position:fixed;top:0;left:0;width:' + PDF_WIDTH + 'px;z-index:-1;opacity:0;pointer-events:none;background:#fff;';
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
 
@@ -493,7 +491,7 @@ function exportPDF() {
     margin: [8, 8, 8, 8],
     filename: `weekly-report-${ver}.pdf`,
     image: { type: 'jpeg', quality: 0.98 },
-    html2canvas: { scale: 2, useCORS: true, width: 1100, windowWidth: 1100 },
+    html2canvas: { scale: 2, useCORS: true },
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
     pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
   };
