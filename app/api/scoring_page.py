@@ -143,6 +143,14 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .ai-box::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #c9774a; border-radius: 2px 0 0 2px; }
 .ai-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #c9774a; margin-bottom: 10px; }
 .ai-text { font-size: 14px; line-height: 1.8; color: #44403c; }
+.ai-text p { margin: 0 0 8px 0; }
+.ai-text p:last-child { margin-bottom: 0; }
+.ai-text strong { font-weight: 700; color: #1a1a1a; }
+.ai-text h3 { font-family: 'Space Grotesk', sans-serif; font-size: 15px; font-weight: 600; margin: 12px 0 6px 0; color: #1a1a1a; }
+.ai-text h4 { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; margin: 10px 0 4px 0; color: #1a1a1a; }
+.ai-text ul, .ai-text ol { padding-left: 20px; margin: 4px 0; }
+.ai-text li { margin: 2px 0; }
+.ai-text em { color: #6b6560; }
 
 /* Sector Table */
 .sector-tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e8e4de; border-radius: 10px; overflow: hidden; }
@@ -285,6 +293,7 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 /* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
@@ -308,7 +317,7 @@ function renderMarket(data) {
     `<div class="idx-grid">${idxHtml}</div>` +
     `<div class="ai-box">
       <div class="ai-label">AI MARKET SUMMARY</div>
-      <div class="ai-text">${data.ai_market_summary || 'AI 分析暂不可用'}</div>
+      <div class="ai-text">${marked.parse(data.ai_market_summary || 'AI 分析暂不可用')}</div>
     </div>`;
 }
 
@@ -330,7 +339,7 @@ function renderSector(data) {
     </tr></thead><tbody>${rows}</tbody></table>` +
     `<div class="ai-box" style="margin-top:20px">
       <div class="ai-label">AI SECTOR ANALYSIS</div>
-      <div class="ai-text">${data.ai_sector_summary || 'AI 分析暂不可用'}</div>
+      <div class="ai-text">${marked.parse(data.ai_sector_summary || 'AI 分析暂不可用')}</div>
     </div>`;
 }
 
