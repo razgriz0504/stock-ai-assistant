@@ -60,6 +60,24 @@ def list_models() -> dict:
 
 def _get_grounding_metadata(response) -> list[dict]:
     """从 litellm 响应中提取 groundingMetadata 列表（兼容多种存储路径）"""
+    # 路径0: 从 choices[0].message 的额外字段中提取
+    try:
+        message = response.choices[0].message
+        if hasattr(message, "grounding_metadata") and message.grounding_metadata:
+            return [message.grounding_metadata]
+    except (AttributeError, IndexError):
+        pass
+
+    # 路径0.5: 从 message.additional_kwargs 提取
+    try:
+        message = response.choices[0].message
+        ak = getattr(message, "additional_kwargs", {}) or {}
+        gm = ak.get("groundingMetadata") or ak.get("grounding_metadata")
+        if gm:
+            return [gm] if isinstance(gm, dict) else gm
+    except (AttributeError, IndexError):
+        pass
+
     # 路径1: _hidden_params（litellm 主要存储位置）
     metadata = getattr(response, "_hidden_params", {}).get(
         "vertex_ai_grounding_metadata", []
@@ -193,7 +211,7 @@ async def chat(
 
         # Gemini: enable Google Search grounding when requested
         if web_search and use_model.startswith("gemini/"):
-            kwargs["tools"] = [{"googleSearch": {}}]
+            kwargs["tools"] = [{"google_search": {}}]
 
         response = await asyncio.to_thread(completion, **kwargs)
 
