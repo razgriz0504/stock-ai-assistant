@@ -354,7 +354,7 @@ async def generate_ai_market_summary(index_data: list[dict], system_prompt: Opti
     user_prompt = json.dumps(data, ensure_ascii=False)
 
     try:
-        return await chat(user_prompt, system_prompt=prompt)
+        return await chat(user_prompt, system_prompt=prompt, web_search=True)
     except Exception as e:
         logger.error(f"AI market summary failed: {e}")
         return "AI 分析暂不可用"
@@ -383,7 +383,7 @@ async def generate_ai_sector_summary(sector_data: list[dict], system_prompt: Opt
     user_prompt = json.dumps(data, ensure_ascii=False)
 
     try:
-        return await chat(user_prompt, system_prompt=prompt)
+        return await chat(user_prompt, system_prompt=prompt, web_search=True)
     except Exception as e:
         logger.error(f"AI sector summary failed: {e}")
         return "AI 分析暂不可用"

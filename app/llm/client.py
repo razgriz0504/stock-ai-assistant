@@ -57,7 +57,7 @@ def list_models() -> dict:
     return SUPPORTED_MODELS.copy()
 
 
-async def chat(prompt: str, system_prompt: str = "", model: str = "") -> str:
+async def chat(prompt: str, system_prompt: str = "", model: str = "", web_search: bool = False) -> str:
     use_model = model or _current_model
     messages = []
     if system_prompt:
@@ -81,6 +81,10 @@ async def chat(prompt: str, system_prompt: str = "", model: str = "") -> str:
         # Gemini: lower safety filtering to avoid SAFETY refusals
         if use_model.startswith("gemini/"):
             kwargs["safety_settings"] = _GEMINI_SAFETY_SETTINGS
+
+        # Gemini: enable web search grounding when requested
+        if web_search and use_model.startswith("gemini/"):
+            kwargs["web_search_options"] = {"search_context_size": "medium"}
 
         response = await asyncio.to_thread(completion, **kwargs)
 
