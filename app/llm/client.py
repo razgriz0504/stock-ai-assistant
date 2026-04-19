@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+from typing import Optional
 from litellm import completion
 
 from config import settings
@@ -57,7 +58,40 @@ def list_models() -> dict:
     return SUPPORTED_MODELS.copy()
 
 
-async def chat(prompt: str, system_prompt: str = "", model: str = "", web_search: bool = False) -> str:
+def _extract_grounding_sources(response) -> list[dict]:
+    """从 Gemini 响应中提取 Google Search grounding 的引用来源"""
+    sources = []
+    # 优先从 _hidden_params 获取
+    grounding_metadata = getattr(response, "_hidden_params", {}).get(
+        "vertex_ai_grounding_metadata", []
+    )
+    if not grounding_metadata:
+        grounding_metadata = getattr(response, "vertex_ai_grounding_metadata", [])
+
+    for metadata in grounding_metadata:
+        for chunk in metadata.get("groundingChunks", []):
+            web = chunk.get("web", {})
+            uri = web.get("uri", "")
+            title = web.get("title", "")
+            if uri:
+                sources.append({"title": title, "url": uri})
+
+    # 去重（按 url）
+    seen = set()
+    unique = []
+    for s in sources:
+        if s["url"] not in seen:
+            seen.add(s["url"])
+            unique.append(s)
+    return unique
+
+
+async def chat(
+    prompt: str,
+    system_prompt: str = "",
+    model: str = "",
+    web_search: bool = False,
+) -> str:
     use_model = model or _current_model
     messages = []
     if system_prompt:
@@ -97,6 +131,15 @@ async def chat(prompt: str, system_prompt: str = "", model: str = "", web_search
         if not content:
             logger.warning(f"LLM returned empty content ({use_model}), finish_reason={response.choices[0].finish_reason}")
             return "AI 返回内容为空，请稍后重试"
+
+        # 若启用了联网搜索，追加引用来源
+        if web_search:
+            sources = _extract_grounding_sources(response)
+            if sources:
+                source_lines = []
+                for i, s in enumerate(sources, 1):
+                    source_lines.append(f"[{i}] [{s['title']}]({s['url']})")
+                content += "\n\n---\n**数据来源**\n" + "\n".join(source_lines)
 
         return content
     except asyncio.TimeoutError:
