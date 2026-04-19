@@ -13,6 +13,7 @@ from app.report.weekly_report import (
     generate_full_report,
     get_or_create_report_config,
     DEFAULT_MARKET_SYSTEM_PROMPT,
+    DEFAULT_CAPITAL_SYSTEM_PROMPT,
     DEFAULT_SECTOR_SYSTEM_PROMPT,
     DEFAULT_STOCKS_SYSTEM_PROMPT,
 )
@@ -39,6 +40,7 @@ class GenerateRequest(BaseModel):
 
 class PromptsUpdate(BaseModel):
     market_system_prompt: Optional[str] = None
+    capital_system_prompt: Optional[str] = None
     sector_system_prompt: Optional[str] = None
     stocks_system_prompt: Optional[str] = None
 
@@ -98,7 +100,7 @@ async def start_generate(
     import json as _json
 
     config = get_or_create_report_config(db)
-    market_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
+    market_prompt, capital_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
     from app.llm.client import get_model
     model_name = get_model()
     version = _get_next_version(db)
@@ -110,6 +112,7 @@ async def start_generate(
         trigger="manual",
         model_name=model_name,
         market_system_prompt=market_prompt,
+        capital_system_prompt=capital_prompt,
         sector_system_prompt=sector_prompt,
         stocks_system_prompt=stocks_prompt,
         watchlist_used=_json.dumps(watchlist),
@@ -120,12 +123,12 @@ async def start_generate(
     report_id = report.id
 
     # 后台任务执行实际生成
-    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, sector_prompt)
+    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, sector_prompt)
 
     return {"report_id": report_id, "version": version, "status": "running"}
 
 
-async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, sector_prompt: str):
+async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, sector_prompt: str):
     """后台任务：执行报告生成"""
     db = SessionLocal()
     try:
@@ -138,7 +141,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         from app.report.weekly_report import (
             fetch_index_data, fetch_sector_data,
             get_report_section_stocks,
-            generate_ai_market_summary, generate_ai_sector_summary,
+            generate_ai_market_summary, generate_ai_capital_summary, generate_ai_sector_summary,
         )
 
         # 并行获取数据
@@ -149,8 +152,9 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         )
 
         # AI 分析
-        ai_market_summary, ai_sector_summary = await asyncio.gather(
+        ai_market_summary, ai_capital_summary, ai_sector_summary = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
+            generate_ai_capital_summary(system_prompt=capital_prompt),
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
         )
 
@@ -160,6 +164,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         report.watchlist_scores = json.dumps(stocks_data.get("watchlist_scores", []), ensure_ascii=False)
         report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
         report.ai_market_summary = ai_market_summary
+        report.ai_capital_summary = ai_capital_summary
         report.ai_sector_summary = ai_sector_summary
         report.status = "completed"
         db.commit()
@@ -211,10 +216,12 @@ async def get_prompts(db: Session = Depends(_get_db)):
     config = get_or_create_report_config(db)
     return {
         "market_system_prompt": config.default_market_system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT,
+        "capital_system_prompt": config.default_capital_system_prompt or DEFAULT_CAPITAL_SYSTEM_PROMPT,
         "sector_system_prompt": config.default_sector_system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT,
         "stocks_system_prompt": config.default_stocks_system_prompt or DEFAULT_STOCKS_SYSTEM_PROMPT,
         "defaults": {
             "market_system_prompt": DEFAULT_MARKET_SYSTEM_PROMPT,
+            "capital_system_prompt": DEFAULT_CAPITAL_SYSTEM_PROMPT,
             "sector_system_prompt": DEFAULT_SECTOR_SYSTEM_PROMPT,
             "stocks_system_prompt": DEFAULT_STOCKS_SYSTEM_PROMPT,
         },
@@ -227,6 +234,8 @@ async def update_prompts(req: PromptsUpdate, db: Session = Depends(_get_db)):
     config = get_or_create_report_config(db)
     if req.market_system_prompt is not None:
         config.default_market_system_prompt = req.market_system_prompt
+    if req.capital_system_prompt is not None:
+        config.default_capital_system_prompt = req.capital_system_prompt
     if req.sector_system_prompt is not None:
         config.default_sector_system_prompt = req.sector_system_prompt
     if req.stocks_system_prompt is not None:
@@ -380,7 +389,16 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* Prompt preview */
-.prompt-preview { background: #faf9f5; border: 1px solid #e8e4de; border-radius: 6px; padding: 12px; font-size: 12px; color: #6b6560; line-height: 1.6; margin-top: 8px; white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+.prompt-preview { background: #faf9f5; border: 1px solid #e8e4de; border-radius: 6px; padding: 12px; font-size: 12px; color: #44403c; line-height: 1.6; margin-top: 8px; max-height: 200px; overflow-y: auto; }
+.prompt-preview p { margin: 0 0 6px 0; }
+.prompt-preview p:last-child { margin-bottom: 0; }
+.prompt-preview strong { font-weight: 700; color: #1a1a1a; }
+.prompt-preview h3, .prompt-preview h4 { margin: 8px 0 4px 0; font-size: 13px; }
+.prompt-preview ul, .prompt-preview ol { padding-left: 18px; margin: 4px 0; }
+.prompt-preview code { background: #e8e4de; padding: 1px 4px; border-radius: 3px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+.prompt-preview pre { background: #e8e4de; padding: 8px; border-radius: 4px; overflow-x: auto; }
+.prompt-preview pre code { background: none; padding: 0; }
+.prompt-preview blockquote { border-left: 3px solid #c9774a; padding-left: 10px; margin: 6px 0; color: #6b6560; }
 
 @media (max-width: 700px) {
   .form-row { grid-template-columns: 1fr; }
@@ -441,13 +459,21 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
       </div>
       <div class="form-group">
         <label class="form-label">大盘综述 System Prompt</label>
-        <textarea class="form-textarea" id="prompt-market"></textarea>
-        <div class="form-hint">用于 AI 大盘综述生成的系统提示词，留空使用默认值</div>
+        <textarea class="form-textarea" id="prompt-market" oninput="previewPrompt('market')"></textarea>
+        <div class="form-hint">用于 AI 大盘综述生成的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
+        <div class="prompt-preview" id="preview-market"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">资金面分析 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-capital" oninput="previewPrompt('capital')"></textarea>
+        <div class="form-hint">用于 AI 资金面分析的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
+        <div class="prompt-preview" id="preview-capital"></div>
       </div>
       <div class="form-group">
         <label class="form-label">行业分析 System Prompt</label>
-        <textarea class="form-textarea" id="prompt-sector"></textarea>
-        <div class="form-hint">用于 AI 行业轮动分析的系统提示词，留空使用默认值</div>
+        <textarea class="form-textarea" id="prompt-sector" oninput="previewPrompt('sector')"></textarea>
+        <div class="form-hint">用于 AI 行业轮动分析的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
+        <div class="prompt-preview" id="preview-sector"></div>
       </div>
       <div class="form-group">
         <label class="form-label">个股分析 System Prompt（预留）</label>
@@ -509,6 +535,7 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 /* ─── Tab switching ─── */
 document.querySelectorAll('.tab').forEach(t => {
@@ -632,13 +659,24 @@ async function deleteReport(id, version) {
 }
 
 /* ─── Prompts ─── */
+function previewPrompt(name) {
+  const textarea = document.getElementById('prompt-' + name);
+  const preview = document.getElementById('preview-' + name);
+  if (!textarea || !preview) return;
+  const val = textarea.value.trim();
+  preview.innerHTML = val ? marked.parse(val) : '<span style="color:#a8a29e;">预览区域 - 输入内容后实时渲染 Markdown</span>';
+}
+
 async function loadPrompts() {
   try {
     const resp = await fetch('/api/admin/prompts');
     const data = await resp.json();
     document.getElementById('prompt-market').value = data.market_system_prompt;
+    document.getElementById('prompt-capital').value = data.capital_system_prompt;
     document.getElementById('prompt-sector').value = data.sector_system_prompt;
     document.getElementById('prompt-stocks').value = data.stocks_system_prompt;
+    // 渲染预览
+    ['market', 'capital', 'sector'].forEach(name => previewPrompt(name));
   } catch (e) {
     console.error('loadPrompts error:', e);
   }
@@ -651,6 +689,7 @@ async function savePrompts() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         market_system_prompt: document.getElementById('prompt-market').value,
+        capital_system_prompt: document.getElementById('prompt-capital').value,
         sector_system_prompt: document.getElementById('prompt-sector').value,
         stocks_system_prompt: document.getElementById('prompt-stocks').value,
       }),

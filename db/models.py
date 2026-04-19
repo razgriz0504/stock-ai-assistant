@@ -104,10 +104,12 @@ class WeeklyReport(Base):
     hot_stock_scores = Column(Text, default="")         # JSON: 热门股评分结果
     # --- AI 分析 ---
     ai_market_summary = Column(Text, default="")        # AI大盘综述
+    ai_capital_summary = Column(Text, default="")       # AI资金面分析
     ai_sector_summary = Column(Text, default="")        # AI行业分析
     ai_stocks_summary = Column(Text, default="")        # 预留：个股AI综合分析
     # --- Prompt 审计 ---
     market_system_prompt = Column(Text, default="")     # 生成时使用的市场分析 prompt
+    capital_system_prompt = Column(Text, default="")    # 生成时使用的资金面分析 prompt
     sector_system_prompt = Column(Text, default="")     # 生成时使用的行业分析 prompt
     stocks_system_prompt = Column(Text, default="")     # 预留：个股分析 prompt
     # --- 元数据 ---
@@ -129,6 +131,7 @@ class ReportConfig(Base):
     schedule_minute = Column(Integer, default=0)
     # --- 默认 Prompt ---
     default_market_system_prompt = Column(Text, default="")
+    default_capital_system_prompt = Column(Text, default="")
     default_sector_system_prompt = Column(Text, default="")
     default_stocks_system_prompt = Column(Text, default="")
     # --- 元数据 ---

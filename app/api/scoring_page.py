@@ -64,6 +64,9 @@ async def get_report(report_id: int, db: Session = Depends(_get_db)):
             "indices": json.loads(report.index_data) if report.index_data else [],
             "ai_market_summary": report.ai_market_summary or "",
         },
+        "capital": {
+            "ai_capital_summary": report.ai_capital_summary or "",
+        },
         "sector": {
             "sectors": json.loads(report.sector_data) if report.sector_data else [],
             "ai_sector_summary": report.ai_sector_summary or "",
@@ -273,9 +276,19 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 2: Sector Analysis -->
+  <!-- Section 2: Capital Flow -->
   <div class="sec-head" style="margin-top:48px">
     <span class="sec-num">02</span>
+    <h2 class="sec-title">资金面分析</h2>
+    <span class="sec-sub">Capital Flow Analysis</span>
+  </div>
+  <div id="section-capital">
+    <div class="loading-box">加载中...</div>
+  </div>
+
+  <!-- Section 3: Sector Analysis -->
+  <div class="sec-head" style="margin-top:48px">
+    <span class="sec-num">03</span>
     <h2 class="sec-title">行业板块</h2>
     <span class="sec-sub">Sector Performance</span>
   </div>
@@ -283,9 +296,9 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 3: Stock Scoring -->
+  <!-- Section 4: Stock Scoring -->
   <div class="sec-head" style="margin-top:48px">
-    <span class="sec-num">03</span>
+    <span class="sec-num">04</span>
     <h2 class="sec-title">个股评分</h2>
     <span class="sec-sub">Stock Scoring</span>
   </div>
@@ -362,6 +375,15 @@ function renderMarket(data) {
   renderLatex('section-market');
 }
 
+function renderCapital(data) {
+  document.getElementById('section-capital').innerHTML =
+    `<div class="ai-box">
+      <div class="ai-label">AI CAPITAL FLOW ANALYSIS</div>
+      <div class="ai-text">${renderMd(data.ai_capital_summary || 'AI 分析暂不可用')}</div>
+    </div>`;
+  renderLatex('section-capital');
+}
+
 function renderSector(data) {
   const rows = (data.sectors || []).map(s =>
     `<tr>
@@ -419,7 +441,7 @@ function showEmpty() {
     <div class="empty-icon">&#x1f4ca;</div>
     <p>暂无已生成的周报，请联系管理员生成</p>
   </div>`;
-  ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+  ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
   document.querySelector('.page-wrap').insertAdjacentHTML('beforeend', html);
@@ -451,7 +473,7 @@ async function loadReport(reportId) {
     const resp = await fetch(`/api/report/${reportId}`);
     const data = await resp.json();
     if (data.error) {
-      ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+      ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
         document.getElementById(id).innerHTML = `<div class="loading-box">${data.error}</div>`;
       });
       return;
@@ -466,11 +488,12 @@ async function loadReport(reportId) {
     document.getElementById('meta-trigger').textContent = data.trigger === 'scheduled' ? '定时生成' : '手动生成';
 
     renderMarket(data.market);
+    renderCapital(data.capital);
     renderSector(data.sector);
     renderStocks(data.stocks);
   } catch (e) {
     console.error('loadReport error:', e);
-    ['section-market', 'section-sector', 'section-stocks'].forEach(id => {
+    ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
       document.getElementById(id).innerHTML = '<div class="loading-box">加载失败</div>';
     });
   }
