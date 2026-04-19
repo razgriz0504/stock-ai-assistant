@@ -58,32 +58,105 @@ def list_models() -> dict:
     return SUPPORTED_MODELS.copy()
 
 
-def _extract_grounding_sources(response) -> list[dict]:
-    """从 Gemini 响应中提取 Google Search grounding 的引用来源"""
-    sources = []
-    # 优先从 _hidden_params 获取
-    grounding_metadata = getattr(response, "_hidden_params", {}).get(
+def _get_grounding_metadata(response) -> list[dict]:
+    """从 litellm 响应中提取 groundingMetadata 列表（兼容多种存储路径）"""
+    # 路径1: _hidden_params（litellm 主要存储位置）
+    metadata = getattr(response, "_hidden_params", {}).get(
         "vertex_ai_grounding_metadata", []
     )
+    if metadata:
+        return metadata
+
+    # 路径2: 顶层属性
+    metadata = getattr(response, "vertex_ai_grounding_metadata", [])
+    if metadata:
+        return metadata
+
+    # 路径3: 直接从 model_extra 或其他自定义属性获取
+    metadata = getattr(response, "model_extra", {}).get(
+        "vertex_ai_grounding_metadata", []
+    )
+    if metadata:
+        return metadata
+
+    return []
+
+
+def _add_inline_citations(text: str, grounding_metadata: list[dict]) -> str:
+    """
+    参照 Gemini 官方文档实现内联引用：
+    使用 groundingSupports 将原文段落与 groundingChunks 中的来源关联，
+    在对应位置插入 [1](url) 格式的引用链接。
+    """
     if not grounding_metadata:
-        grounding_metadata = getattr(response, "vertex_ai_grounding_metadata", [])
+        return text
+
+    # 合并所有 metadata 中的 chunks 和 supports
+    all_chunks = []
+    all_supports = []
 
     for metadata in grounding_metadata:
-        for chunk in metadata.get("groundingChunks", []):
-            web = chunk.get("web", {})
-            uri = web.get("uri", "")
-            title = web.get("title", "")
-            if uri:
-                sources.append({"title": title, "url": uri})
+        chunks = metadata.get("groundingChunks", [])
+        supports = metadata.get("groundingSupports", [])
+        for chunk in chunks:
+            all_chunks.append(chunk)
+        for support in supports:
+            all_supports.append(support)
 
-    # 去重（按 url）
-    seen = set()
-    unique = []
-    for s in sources:
-        if s["url"] not in seen:
-            seen.add(s["url"])
-            unique.append(s)
-    return unique
+    if not all_chunks or not all_supports:
+        # 无 supports 时，降级为末尾追加来源列表
+        return _append_source_list(text, all_chunks)
+
+    # 按 endIndex 降序排列，避免插入时索引偏移
+    sorted_supports = sorted(
+        all_supports,
+        key=lambda s: s.get("segment", {}).get("endIndex", 0),
+        reverse=True,
+    )
+
+    for support in sorted_supports:
+        segment = support.get("segment", {})
+        end_index = segment.get("endIndex")
+        chunk_indices = support.get("groundingChunkIndices", [])
+
+        if end_index is None or not chunk_indices:
+            continue
+        if end_index > len(text):
+            continue
+
+        # 构建引用字符串：[1](url1), [2](url2)
+        citation_links = []
+        for i in chunk_indices:
+            if i < len(all_chunks):
+                web = all_chunks[i].get("web", {})
+                uri = web.get("uri", "")
+                if uri:
+                    citation_links.append(f"[{i + 1}]({uri})")
+
+        if citation_links:
+            citation_string = " " + ", ".join(citation_links)
+            text = text[:end_index] + citation_string + text[end_index:]
+
+    # 末尾追加来源汇总
+    return _append_source_list(text, all_chunks)
+
+
+def _append_source_list(text: str, chunks: list[dict]) -> str:
+    """在文本末尾追加去重后的来源列表"""
+    seen_urls = set()
+    source_lines = []
+    for i, chunk in enumerate(chunks):
+        web = chunk.get("web", {})
+        uri = web.get("uri", "")
+        title = web.get("title", "")
+        if uri and uri not in seen_urls:
+            seen_urls.add(uri)
+            source_lines.append(f"[{i + 1}] [{title}]({uri})")
+
+    if source_lines:
+        text += "\n\n---\n**数据来源**\n" + "\n".join(source_lines)
+
+    return text
 
 
 async def chat(
@@ -99,7 +172,7 @@ async def chat(
     messages.append({"role": "user", "content": prompt})
 
     try:
-        logger.info(f"Calling LLM: {use_model}")
+        logger.info(f"Calling LLM: {use_model} (web_search={web_search})")
         # 联网搜索模式需要更长的超时时间
         timeout = 120 if web_search else _LLM_TIMEOUT
         kwargs = {
@@ -134,18 +207,16 @@ async def chat(
             logger.warning(f"LLM returned empty content ({use_model}), finish_reason={response.choices[0].finish_reason}")
             return "AI 返回内容为空，请稍后重试"
 
-        # 若启用了联网搜索，追加引用来源
+        # 若启用了联网搜索，提取 groundingMetadata 并添加内联引用
         if web_search:
-            sources = _extract_grounding_sources(response)
-            if sources:
-                source_lines = []
-                for i, s in enumerate(sources, 1):
-                    source_lines.append(f"[{i}] [{s['title']}]({s['url']})")
-                content += "\n\n---\n**数据来源**\n" + "\n".join(source_lines)
+            grounding_metadata = _get_grounding_metadata(response)
+            if grounding_metadata:
+                logger.info(f"Grounding metadata found: {len(grounding_metadata)} entries")
+                content = _add_inline_citations(content, grounding_metadata)
 
         return content
     except asyncio.TimeoutError:
-        logger.error(f"LLM call timed out after {_LLM_TIMEOUT}s ({use_model})")
+        logger.error(f"LLM call timed out after {timeout}s ({use_model})")
         return f"AI 调用超时，请稍后重试"
     except Exception as e:
         logger.error(f"LLM call failed ({use_model}): {e}")
