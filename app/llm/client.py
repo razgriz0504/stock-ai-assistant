@@ -82,9 +82,9 @@ async def chat(prompt: str, system_prompt: str = "", model: str = "", web_search
         if use_model.startswith("gemini/"):
             kwargs["safety_settings"] = _GEMINI_SAFETY_SETTINGS
 
-        # Gemini: enable web search grounding when requested
+        # Gemini: enable Google Search grounding when requested
         if web_search and use_model.startswith("gemini/"):
-            kwargs["web_search_options"] = {"search_context_size": "medium"}
+            kwargs["tools"] = [{"googleSearch": {}}]
 
         response = await asyncio.to_thread(completion, **kwargs)
 
