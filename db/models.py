@@ -1,6 +1,7 @@
 import os
+import logging
 from pathlib import Path
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timezone
 
@@ -139,8 +140,29 @@ class ReportConfig(Base):
 
 
 def init_db():
-    """初始化数据库，创建所有表"""
+    """初始化数据库，创建所有表 + 自动迁移缺失列"""
     Base.metadata.create_all(bind=engine)
+    _migrate_missing_columns()
+
+
+def _migrate_missing_columns():
+    """检测并添加缺失的列（SQLite 不支持 ALTER TABLE ADD COLUMN IF NOT EXISTS）"""
+    # 需要迁移的列: (表名, 列名, 列类型 SQL)
+    migrations = [
+        ("report_config", "default_capital_system_prompt", "TEXT DEFAULT ''"),
+        ("weekly_reports", "ai_capital_summary", "TEXT DEFAULT ''"),
+        ("weekly_reports", "capital_system_prompt", "TEXT DEFAULT ''"),
+    ]
+    with engine.connect() as conn:
+        for table, column, col_type in migrations:
+            # PRAGMA table_info 获取现有列名
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing_cols = {row[1] for row in result}
+            if column not in existing_cols:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
+                conn.commit()
+                logger = logging.getLogger(__name__)
+                logger.info(f"Migration: added column {table}.{column}")
 
 
 def get_db():
