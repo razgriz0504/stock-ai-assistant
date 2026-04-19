@@ -151,6 +151,8 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .ai-text ul, .ai-text ol { padding-left: 20px; margin: 4px 0; }
 .ai-text li { margin: 2px 0; }
 .ai-text em { color: #6b6560; }
+.ai-text .katex { font-size: 1em; }
+.ai-text .katex-display { margin: 8px 0; overflow-x: auto; }
 
 /* Sector Table */
 .sector-tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e8e4de; border-radius: 10px; overflow: hidden; }
@@ -237,6 +239,7 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
   .page-wrap { padding: 24px 16px; }
 }
 </style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 </head>
 <body>
 <div class="page-wrap" id="report-content">
@@ -294,12 +297,49 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <script>
 /* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
 function chgStr(v) { return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
 function fmtPrice(v) { return v != null ? '$' + v.toFixed(2) : '-'; }
 function badgeCls(r) { r = r.toLowerCase(); if (r === 'aa' || r === 'a') return 'a'; if (r === 'b') return 'b'; return 'c'; }
+
+/* Markdown + LaTeX 渲染：先保护 $...$ / $$...$$ 不被 marked 吞掉下划线 */
+function renderMd(text) {
+  if (!text) return '';
+  const mathBlocks = [];
+  // 先保护 display math ($$...$$)
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (m) => {
+    mathBlocks.push(m);
+    return '%%MATH' + (mathBlocks.length - 1) + '%%';
+  });
+  // 再保护 inline math ($...$)
+  text = text.replace(/\$([^\$]+?)\$/g, (m) => {
+    mathBlocks.push(m);
+    return '%%MATH' + (mathBlocks.length - 1) + '%%';
+  });
+  let html = marked.parse(text);
+  // 恢复 LaTeX 公式
+  html = html.replace(/%%MATH(\d+)%%/g, (_, i) => mathBlocks[i]);
+  return html;
+}
+
+/* 对指定容器内的 .ai-text 执行 KaTeX 渲染 */
+function renderLatex(containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.querySelectorAll('.ai-text').forEach(node => {
+    renderMathInElement(node, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+      ],
+      throwOnError: false,
+    });
+  });
+}
 
 /* ─── Rendering ─── */
 function renderMarket(data) {
@@ -317,8 +357,9 @@ function renderMarket(data) {
     `<div class="idx-grid">${idxHtml}</div>` +
     `<div class="ai-box">
       <div class="ai-label">AI MARKET SUMMARY</div>
-      <div class="ai-text">${marked.parse(data.ai_market_summary || 'AI 分析暂不可用')}</div>
+      <div class="ai-text">${renderMd(data.ai_market_summary || 'AI 分析暂不可用')}</div>
     </div>`;
+  renderLatex('section-market');
 }
 
 function renderSector(data) {
@@ -339,8 +380,9 @@ function renderSector(data) {
     </tr></thead><tbody>${rows}</tbody></table>` +
     `<div class="ai-box" style="margin-top:20px">
       <div class="ai-label">AI SECTOR ANALYSIS</div>
-      <div class="ai-text">${marked.parse(data.ai_sector_summary || 'AI 分析暂不可用')}</div>
+      <div class="ai-text">${renderMd(data.ai_sector_summary || 'AI 分析暂不可用')}</div>
     </div>`;
+  renderLatex('section-sector');
 }
 
 function renderStocks(data) {
