@@ -59,43 +59,47 @@ def list_models() -> dict:
 
 
 def _get_grounding_metadata(response) -> list[dict]:
-    """从 litellm 响应中提取 groundingMetadata 列表（兼容多种存储路径）"""
-    # 路径0: 从 choices[0].message 的额外字段中提取
+    """增强型元数据提取：适配 Gemini 2.0/3.1 在 LiteLLM 中的返回结构"""
+
+    # 路径 A: 检查 choices[0].message 的对象属性 (LiteLLM 最新版)
     try:
-        message = response.choices[0].message
-        if hasattr(message, "grounding_metadata") and message.grounding_metadata:
-            return [message.grounding_metadata]
+        msg = response.choices[0].message
+        for attr in ["grounding_metadata", "groundingMetadata"]:
+            if hasattr(msg, attr) and getattr(msg, attr):
+                gm = getattr(msg, attr)
+                return [gm] if isinstance(gm, dict) else gm
     except (AttributeError, IndexError):
         pass
 
-    # 路径0.5: 从 message.additional_kwargs 提取
+    # 路径 B: 检查 additional_kwargs (OpenAI 兼容模式常用)
     try:
-        message = response.choices[0].message
-        ak = getattr(message, "additional_kwargs", {}) or {}
-        gm = ak.get("groundingMetadata") or ak.get("grounding_metadata")
+        ak = response.choices[0].message.additional_kwargs
+        gm = ak.get("grounding_metadata") or ak.get("groundingMetadata")
         if gm:
             return [gm] if isinstance(gm, dict) else gm
     except (AttributeError, IndexError):
         pass
 
-    # 路径1: _hidden_params（litellm 主要存储位置）
-    metadata = getattr(response, "_hidden_params", {}).get(
-        "vertex_ai_grounding_metadata", []
-    )
-    if metadata:
-        return metadata
+    # 路径 C: 检查 model_extra
+    try:
+        me = getattr(response, "model_extra", {}) or {}
+        gm = me.get("grounding_metadata") or me.get("groundingMetadata")
+        if gm:
+            return [gm] if isinstance(gm, dict) else gm
+    except (AttributeError, IndexError):
+        pass
 
-    # 路径2: 顶层属性
-    metadata = getattr(response, "vertex_ai_grounding_metadata", [])
-    if metadata:
-        return metadata
+    # 路径 D: 降级到 _hidden_params (litellm 常规存储)
+    hidden = getattr(response, "_hidden_params", {}) or {}
+    for k in ["vertex_ai_grounding_metadata", "grounding_metadata"]:
+        if hidden.get(k):
+            return hidden[k]
 
-    # 路径3: 直接从 model_extra 或其他自定义属性获取
-    metadata = getattr(response, "model_extra", {}).get(
-        "vertex_ai_grounding_metadata", []
-    )
-    if metadata:
-        return metadata
+    # 路径 E: 顶层属性
+    for attr in ["vertex_ai_grounding_metadata", "grounding_metadata"]:
+        gm = getattr(response, attr, None)
+        if gm:
+            return gm
 
     return []
 
