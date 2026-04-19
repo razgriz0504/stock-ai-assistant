@@ -67,6 +67,9 @@ async def get_report(report_id: int, db: Session = Depends(_get_db)):
         "capital": {
             "ai_capital_summary": report.ai_capital_summary or "",
         },
+        "geopolitics": {
+            "ai_geopolitics_summary": report.ai_geopolitics_summary or "",
+        },
         "sector": {
             "sectors": json.loads(report.sector_data) if report.sector_data else [],
             "ai_sector_summary": report.ai_sector_summary or "",
@@ -286,9 +289,19 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 3: Sector Analysis -->
+  <!-- Section 3: Geopolitics -->
   <div class="sec-head" style="margin-top:48px">
     <span class="sec-num">03</span>
+    <h2 class="sec-title">国际局势</h2>
+    <span class="sec-sub">Geopolitical Outlook</span>
+  </div>
+  <div id="section-geopolitics">
+    <div class="loading-box">加载中...</div>
+  </div>
+
+  <!-- Section 4: Sector Analysis -->
+  <div class="sec-head" style="margin-top:48px">
+    <span class="sec-num">04</span>
     <h2 class="sec-title">行业板块</h2>
     <span class="sec-sub">Sector Performance</span>
   </div>
@@ -296,9 +309,9 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 4: Stock Scoring -->
+  <!-- Section 5: Stock Scoring -->
   <div class="sec-head" style="margin-top:48px">
-    <span class="sec-num">04</span>
+    <span class="sec-num">05</span>
     <h2 class="sec-title">个股评分</h2>
     <span class="sec-sub">Stock Scoring</span>
   </div>
@@ -384,6 +397,15 @@ function renderCapital(data) {
   renderLatex('section-capital');
 }
 
+function renderGeopolitics(data) {
+  document.getElementById('section-geopolitics').innerHTML =
+    `<div class="ai-box">
+      <div class="ai-label">AI GEOPOLITICAL OUTLOOK</div>
+      <div class="ai-text">${renderMd(data.ai_geopolitics_summary || 'AI 分析暂不可用')}</div>
+    </div>`;
+  renderLatex('section-geopolitics');
+}
+
 function renderSector(data) {
   const rows = (data.sectors || []).map(s =>
     `<tr>
@@ -441,7 +463,7 @@ function showEmpty() {
     <div class="empty-icon">&#x1f4ca;</div>
     <p>暂无已生成的周报，请联系管理员生成</p>
   </div>`;
-  ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
+  ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
   document.querySelector('.page-wrap').insertAdjacentHTML('beforeend', html);
@@ -473,7 +495,7 @@ async function loadReport(reportId) {
     const resp = await fetch(`/api/report/${reportId}`);
     const data = await resp.json();
     if (data.error) {
-      ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
+      ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
         document.getElementById(id).innerHTML = `<div class="loading-box">${data.error}</div>`;
       });
       return;
@@ -489,11 +511,12 @@ async function loadReport(reportId) {
 
     renderMarket(data.market);
     renderCapital(data.capital);
+    renderGeopolitics(data.geopolitics);
     renderSector(data.sector);
     renderStocks(data.stocks);
   } catch (e) {
     console.error('loadReport error:', e);
-    ['section-market', 'section-capital', 'section-sector', 'section-stocks'].forEach(id => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
       document.getElementById(id).innerHTML = '<div class="loading-box">加载失败</div>';
     });
   }
@@ -506,7 +529,7 @@ function onVersionChange() {
     // Remove any empty-box
     const empty = document.querySelector('.empty-box');
     if (empty) empty.remove();
-    ['section-market', 'section-sector', 'section-stocks'].forEach(s => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(s => {
       document.getElementById(s).innerHTML = '<div class="loading-box">加载中...</div>';
     });
     loadReport(id);

@@ -14,6 +14,7 @@ from app.report.weekly_report import (
     get_or_create_report_config,
     DEFAULT_MARKET_SYSTEM_PROMPT,
     DEFAULT_CAPITAL_SYSTEM_PROMPT,
+    DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
     DEFAULT_SECTOR_SYSTEM_PROMPT,
     DEFAULT_STOCKS_SYSTEM_PROMPT,
 )
@@ -41,6 +42,7 @@ class GenerateRequest(BaseModel):
 class PromptsUpdate(BaseModel):
     market_system_prompt: Optional[str] = None
     capital_system_prompt: Optional[str] = None
+    geopolitics_system_prompt: Optional[str] = None
     sector_system_prompt: Optional[str] = None
     stocks_system_prompt: Optional[str] = None
 
@@ -100,7 +102,7 @@ async def start_generate(
     import json as _json
 
     config = get_or_create_report_config(db)
-    market_prompt, capital_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
+    market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
     from app.llm.client import get_model
     model_name = get_model()
     version = _get_next_version(db)
@@ -113,6 +115,7 @@ async def start_generate(
         model_name=model_name,
         market_system_prompt=market_prompt,
         capital_system_prompt=capital_prompt,
+        geopolitics_system_prompt=geopolitics_prompt,
         sector_system_prompt=sector_prompt,
         stocks_system_prompt=stocks_prompt,
         watchlist_used=_json.dumps(watchlist),
@@ -123,12 +126,12 @@ async def start_generate(
     report_id = report.id
 
     # 后台任务执行实际生成
-    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, sector_prompt)
+    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, geopolitics_prompt, sector_prompt)
 
     return {"report_id": report_id, "version": version, "status": "running"}
 
 
-async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, sector_prompt: str):
+async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, geopolitics_prompt: str, sector_prompt: str):
     """后台任务：执行报告生成"""
     db = SessionLocal()
     try:
@@ -141,7 +144,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         from app.report.weekly_report import (
             fetch_index_data, fetch_sector_data,
             get_report_section_stocks,
-            generate_ai_market_summary, generate_ai_capital_summary, generate_ai_sector_summary,
+            generate_ai_market_summary, generate_ai_capital_summary, generate_ai_geopolitics_summary, generate_ai_sector_summary,
         )
 
         # 并行获取数据
@@ -152,9 +155,10 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         )
 
         # AI 分析
-        ai_market_summary, ai_capital_summary, ai_sector_summary = await asyncio.gather(
+        ai_market_summary, ai_capital_summary, ai_geopolitics_summary, ai_sector_summary = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
             generate_ai_capital_summary(system_prompt=capital_prompt),
+            generate_ai_geopolitics_summary(system_prompt=geopolitics_prompt),
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
         )
 
@@ -165,6 +169,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
         report.ai_market_summary = ai_market_summary
         report.ai_capital_summary = ai_capital_summary
+        report.ai_geopolitics_summary = ai_geopolitics_summary
         report.ai_sector_summary = ai_sector_summary
         report.status = "completed"
         db.commit()
@@ -217,11 +222,13 @@ async def get_prompts(db: Session = Depends(_get_db)):
     return {
         "market_system_prompt": config.default_market_system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT,
         "capital_system_prompt": config.default_capital_system_prompt or DEFAULT_CAPITAL_SYSTEM_PROMPT,
+        "geopolitics_system_prompt": config.default_geopolitics_system_prompt or DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
         "sector_system_prompt": config.default_sector_system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT,
         "stocks_system_prompt": config.default_stocks_system_prompt or DEFAULT_STOCKS_SYSTEM_PROMPT,
         "defaults": {
             "market_system_prompt": DEFAULT_MARKET_SYSTEM_PROMPT,
             "capital_system_prompt": DEFAULT_CAPITAL_SYSTEM_PROMPT,
+            "geopolitics_system_prompt": DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
             "sector_system_prompt": DEFAULT_SECTOR_SYSTEM_PROMPT,
             "stocks_system_prompt": DEFAULT_STOCKS_SYSTEM_PROMPT,
         },
@@ -236,6 +243,8 @@ async def update_prompts(req: PromptsUpdate, db: Session = Depends(_get_db)):
         config.default_market_system_prompt = req.market_system_prompt
     if req.capital_system_prompt is not None:
         config.default_capital_system_prompt = req.capital_system_prompt
+    if req.geopolitics_system_prompt is not None:
+        config.default_geopolitics_system_prompt = req.geopolitics_system_prompt
     if req.sector_system_prompt is not None:
         config.default_sector_system_prompt = req.sector_system_prompt
     if req.stocks_system_prompt is not None:
@@ -470,6 +479,12 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
         <div class="prompt-preview" id="preview-capital"></div>
       </div>
       <div class="form-group">
+        <label class="form-label">国际局势 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-geopolitics" oninput="previewPrompt('geopolitics')"></textarea>
+        <div class="form-hint">用于 AI 国际局势分析的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
+        <div class="prompt-preview" id="preview-geopolitics"></div>
+      </div>
+      <div class="form-group">
         <label class="form-label">行业分析 System Prompt</label>
         <textarea class="form-textarea" id="prompt-sector" oninput="previewPrompt('sector')"></textarea>
         <div class="form-hint">用于 AI 行业轮动分析的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
@@ -673,10 +688,11 @@ async function loadPrompts() {
     const data = await resp.json();
     document.getElementById('prompt-market').value = data.market_system_prompt;
     document.getElementById('prompt-capital').value = data.capital_system_prompt;
+    document.getElementById('prompt-geopolitics').value = data.geopolitics_system_prompt;
     document.getElementById('prompt-sector').value = data.sector_system_prompt;
     document.getElementById('prompt-stocks').value = data.stocks_system_prompt;
     // 渲染预览
-    ['market', 'capital', 'sector'].forEach(name => previewPrompt(name));
+    ['market', 'capital', 'geopolitics', 'sector'].forEach(name => previewPrompt(name));
   } catch (e) {
     console.error('loadPrompts error:', e);
   }
@@ -690,6 +706,7 @@ async function savePrompts() {
       body: JSON.stringify({
         market_system_prompt: document.getElementById('prompt-market').value,
         capital_system_prompt: document.getElementById('prompt-capital').value,
+        geopolitics_system_prompt: document.getElementById('prompt-geopolitics').value,
         sector_system_prompt: document.getElementById('prompt-sector').value,
         stocks_system_prompt: document.getElementById('prompt-stocks').value,
       }),

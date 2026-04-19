@@ -64,6 +64,8 @@ DEFAULT_SECTOR_SYSTEM_PROMPT = (
 
 DEFAULT_CAPITAL_SYSTEM_PROMPT = ""  # 资金面分析：纯 LLM 联网搜索，无系统注入数据
 
+DEFAULT_GEOPOLITICS_SYSTEM_PROMPT = ""  # 国际局势分析：纯 LLM 联网搜索，无系统注入数据
+
 DEFAULT_STOCKS_SYSTEM_PROMPT = ""  # 预留：个股综合分析 prompt
 
 yf_provider = YFinanceProvider()
@@ -416,6 +418,17 @@ async def generate_ai_capital_summary(system_prompt: Optional[str] = None) -> st
         return "AI 分析暂不可用"
 
 
+async def generate_ai_geopolitics_summary(system_prompt: Optional[str] = None) -> str:
+    """调用 LLM 生成国际局势分析，纯联网搜索无系统数据注入"""
+    prompt = system_prompt or DEFAULT_GEOPOLITICS_SYSTEM_PROMPT
+    user_prompt = "请分析本周影响美股市场的国际局势因素，包括地缘政治动态、贸易政策变化、主要经济体宏观政策、国际冲突与外交进展等。"
+    try:
+        return await chat(user_prompt, system_prompt=prompt, web_search=True)
+    except Exception as e:
+        logger.error(f"AI geopolitics summary failed: {e}")
+        return "AI 分析暂不可用"
+
+
 # ─── 周报主入口 ───
 
 async def get_report_section_market() -> dict:
@@ -437,6 +450,16 @@ async def get_report_section_capital(system_prompt: Optional[str] = None) -> dic
     except Exception as e:
         logger.error(f"Capital section error: {e}", exc_info=True)
         return {"ai_capital_summary": "数据加载失败"}
+
+
+async def get_report_section_geopolitics(system_prompt: Optional[str] = None) -> dict:
+    """获取国际局势分析 section 数据（纯 LLM 输出）"""
+    try:
+        ai_summary = await generate_ai_geopolitics_summary(system_prompt=system_prompt)
+        return {"ai_geopolitics_summary": ai_summary}
+    except Exception as e:
+        logger.error(f"Geopolitics section error: {e}", exc_info=True)
+        return {"ai_geopolitics_summary": "数据加载失败"}
 
 
 async def get_report_section_sector() -> dict:
@@ -492,6 +515,7 @@ def get_or_create_report_config(db: Session) -> ReportConfig:
             id=1,
             default_market_system_prompt=DEFAULT_MARKET_SYSTEM_PROMPT,
             default_capital_system_prompt=DEFAULT_CAPITAL_SYSTEM_PROMPT,
+            default_geopolitics_system_prompt=DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
             default_sector_system_prompt=DEFAULT_SECTOR_SYSTEM_PROMPT,
             default_stocks_system_prompt=DEFAULT_STOCKS_SYSTEM_PROMPT,
         )
@@ -501,13 +525,14 @@ def get_or_create_report_config(db: Session) -> ReportConfig:
     return config
 
 
-def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str]:
+def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str, str]:
     """从 ReportConfig 解析 prompt，空值回退到默认常量"""
     market_prompt = config.default_market_system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT
     capital_prompt = config.default_capital_system_prompt or DEFAULT_CAPITAL_SYSTEM_PROMPT
+    geopolitics_prompt = config.default_geopolitics_system_prompt or DEFAULT_GEOPOLITICS_SYSTEM_PROMPT
     sector_prompt = config.default_sector_system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT
     stocks_prompt = config.default_stocks_system_prompt or DEFAULT_STOCKS_SYSTEM_PROMPT
-    return market_prompt, capital_prompt, sector_prompt, stocks_prompt
+    return market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt
 
 
 # ─── 全量报告生成（编排器） ───
@@ -532,7 +557,7 @@ async def generate_full_report(
 
     version = _get_next_version(db)
     config = get_or_create_report_config(db)
-    market_prompt, capital_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
+    market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
     model_name = get_model()
 
     # 1. 创建 DB 行
@@ -544,6 +569,7 @@ async def generate_full_report(
         model_name=model_name,
         market_system_prompt=market_prompt,
         capital_system_prompt=capital_prompt,
+        geopolitics_system_prompt=geopolitics_prompt,
         sector_system_prompt=sector_prompt,
         stocks_system_prompt=stocks_prompt,
         watchlist_used=json.dumps(watchlist),
@@ -561,10 +587,11 @@ async def generate_full_report(
             get_report_section_stocks(watchlist),
         )
 
-        # AI 分析（依赖上面的数据 + 资金面纯 LLM）
-        ai_market_summary, ai_capital_summary, ai_sector_summary = await asyncio.gather(
+        # AI 分析（依赖上面的数据 + 纯 LLM 模块）
+        ai_market_summary, ai_capital_summary, ai_geopolitics_summary, ai_sector_summary = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
             generate_ai_capital_summary(system_prompt=capital_prompt),
+            generate_ai_geopolitics_summary(system_prompt=geopolitics_prompt),
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
         )
 
@@ -575,6 +602,7 @@ async def generate_full_report(
         report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
         report.ai_market_summary = ai_market_summary
         report.ai_capital_summary = ai_capital_summary
+        report.ai_geopolitics_summary = ai_geopolitics_summary
         report.ai_sector_summary = ai_sector_summary
         report.status = "completed"
         db.commit()
