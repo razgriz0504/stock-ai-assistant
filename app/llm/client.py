@@ -35,9 +35,6 @@ _GEMINI_SAFETY_SETTINGS = [
     {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
 ]
 
-# 联网搜索固定使用此模型（已验证 googleSearch 工具兼容性）
-_WEB_SEARCH_MODEL = "gemini/gemini-2.0-flash"
-
 # Default timeout (seconds) for LLM calls
 _LLM_TIMEOUT = 60
 
@@ -175,12 +172,7 @@ async def chat(
     messages.append({"role": "user", "content": prompt})
 
     try:
-        # 联网搜索模式：强制使用已验证兼容 googleSearch 的模型
-        if web_search:
-            use_model = _WEB_SEARCH_MODEL
-            logger.info(f"Calling LLM: {use_model} (web_search=True, forced for grounding)")
-        else:
-            logger.info(f"Calling LLM: {use_model}")
+        logger.info(f"Calling LLM: {use_model} (web_search={web_search})")
         # 联网搜索模式需要更长的超时时间
         timeout = 120 if web_search else _LLM_TIMEOUT
         kwargs = {
