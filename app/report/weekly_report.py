@@ -23,6 +23,13 @@ INDEX_SYMBOLS = {
     "^IXIC": "纳斯达克",
 }
 
+# 指数对应的代理 ETF（yfinance 对 ETF 的 info 返回更完整的估值数据）
+INDEX_ETF_PROXY = {
+    "^GSPC": "SPY",
+    "^DJI": "DIA",
+    "^IXIC": "QQQ",
+}
+
 SECTOR_ETFS = {
     "XLK": "科技", "XLF": "金融", "XLE": "能源", "XLV": "医疗",
     "XLY": "非必需消费", "XLP": "必需消费", "XLI": "工业",
@@ -90,14 +97,23 @@ def fetch_index_data() -> list[dict]:
                         vol = df_vol["Volume"].iloc[i]
                         vol_ratios.append(round(vol / ma, 2) if ma and ma > 0 else 1.0)
 
-            # Forward P/E（通过 yfinance Ticker 的 info 字典获取）
+            # Forward P/E：优先从指数获取，若为空则从代理 ETF 获取
             pe_info = {}
             try:
                 import yfinance as yf
+                # 先尝试指数本身
                 ticker = yf.Ticker(symbol)
                 info = ticker.info
                 pe_info["forward_pe"] = info.get("forwardPE")
                 pe_info["trailing_pe"] = info.get("trailingPE")
+                # 指数无 P/E 数据时，用代理 ETF
+                if not pe_info.get("forward_pe") and not pe_info.get("trailing_pe"):
+                    etf_symbol = INDEX_ETF_PROXY.get(symbol)
+                    if etf_symbol:
+                        etf_ticker = yf.Ticker(etf_symbol)
+                        etf_info = etf_ticker.info
+                        pe_info["forward_pe"] = etf_info.get("forwardPE")
+                        pe_info["trailing_pe"] = etf_info.get("trailingPE")
             except Exception:
                 pass
 
@@ -344,11 +360,9 @@ async def generate_ai_market_summary(index_data: list[dict], system_prompt: Opti
         # 成交量数据（近5日量比）
         if idx.get("vol_ratios"):
             item["vol_ratios_5d"] = idx["vol_ratios"]
-        # 估值数据
-        if idx.get("forward_pe"):
-            item["forward_pe"] = idx["forward_pe"]
-        if idx.get("trailing_pe"):
-            item["trailing_pe"] = idx["trailing_pe"]
+        # 估值数据（始终传入，null 表示系统未获取到，LLM 应联网搜索）
+        item["forward_pe"] = idx.get("forward_pe")
+        item["trailing_pe"] = idx.get("trailing_pe")
         data.append(item)
 
     user_prompt = json.dumps(data, ensure_ascii=False)
