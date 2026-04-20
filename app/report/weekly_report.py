@@ -209,42 +209,36 @@ def fetch_sector_data() -> list[dict]:
 
 def _extract_tech_info(analyzer: StockAnalyzer) -> dict:
     """从 StockAnalyzer 提取技术指标摘要"""
-    signals = analyzer.signals
     tech = {}
+    latest = analyzer.data.iloc[-1]
 
     # KDJ
-    kdj = signals.get("KDJ", {})
-    if kdj:
-        latest = analyzer.data.iloc[-1]
-        tech["KDJ"] = f"K:{latest['K']:.0f} D:{latest['D']:.0f} J:{latest['J']:.0f}"
+    if pd.notna(latest.get('KDJk_9_3_3')):
+        tech["KDJ"] = f"K:{latest['KDJk_9_3_3']:.0f} D:{latest['KDJd_9_3_3']:.0f} J:{latest['KDJj_9_3_3']:.0f}"
 
     # MACD
-    macd = signals.get("MACD", {})
-    if macd:
-        latest = analyzer.data.iloc[-1]
-        tech["MACD"] = f"DIF:{latest['MACD_DIF']:.1f} DEA:{latest['MACD_DEA']:.1f}"
+    if pd.notna(latest.get('MACD_12_26_9')):
+        tech["MACD"] = f"DIF:{latest['MACD_12_26_9']:.1f} DEA:{latest['MACDs_12_26_9']:.1f}"
 
     # RSI
-    rsi = signals.get("RSI", {})
-    if rsi:
-        latest = analyzer.data.iloc[-1]
-        tech["RSI"] = f"{latest['RSI']:.1f}"
+    if pd.notna(latest.get('RSI_14')):
+        tech["RSI"] = f"{latest['RSI_14']:.1f}"
 
     # MA Trend
-    ma = signals.get("MA", {})
-    if ma:
-        st = ma.get("short_term", "")
-        lt = ma.get("long_term", "")
-        if st == "bullish" and lt == "bullish":
-            tech["MA Trend"] = "多头排列"
-        elif st == "bearish" and lt == "bearish":
-            tech["MA Trend"] = "空头排列"
-        elif st == "bullish":
-            tech["MA Trend"] = "偏多"
-        elif st == "bearish":
-            tech["MA Trend"] = "偏空"
-        else:
-            tech["MA Trend"] = "中性"
+    short_term = "bullish" if pd.notna(latest.get('SMA_5')) and latest['SMA_5'] > latest['SMA_10'] else "bearish"
+    long_term = "neutral"
+    if pd.notna(latest.get('SMA_60')):
+        long_term = "bullish" if latest['SMA_20'] > latest['SMA_60'] else "bearish"
+    if short_term == "bullish" and long_term == "bullish":
+        tech["MA Trend"] = "多头排列"
+    elif short_term == "bearish" and long_term == "bearish":
+        tech["MA Trend"] = "空头排列"
+    elif short_term == "bullish":
+        tech["MA Trend"] = "偏多"
+    elif short_term == "bearish":
+        tech["MA Trend"] = "偏空"
+    else:
+        tech["MA Trend"] = "中性"
 
     return tech
 
@@ -269,7 +263,6 @@ def score_stocks(symbols: list[str], period: str = "3mo") -> list[dict]:
             if analyzer.data.empty:
                 return None
             analyzer.calculate_all_indicators()
-            analyzer.analyze_all()
             rec = analyzer.generate_recommendation()
             tech = _extract_tech_info(analyzer)
             summary = _build_summary(analyzer)

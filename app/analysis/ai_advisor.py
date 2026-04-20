@@ -29,18 +29,18 @@ async def analyze_with_ai(symbol: str, period: str = "1y") -> tuple[str, str]:
     prev = analyzer.data.iloc[-2]
     recommendation = analyzer.generate_recommendation()
 
-    ma60_str = f"${latest['MA60']:.2f}" if 'MA60' in latest.index and pd.notna(latest.get('MA60')) else 'N/A'
+    sma60_str = f"${latest['SMA_60']:.2f}" if 'SMA_60' in latest.index and pd.notna(latest.get('SMA_60')) else 'N/A'
 
     prompt = f"""分析美股 {symbol}。
 
 【技术数据摘要】
 - 当前价格: ${latest['Close']:.2f} (昨日: ${prev['Close']:.2f})
-- 均线: MA5=${latest['MA5']:.2f}, MA20=${latest['MA20']:.2f}, MA60={ma60_str}
-- 动能: RSI={latest['RSI']:.2f}, KDJ(K={latest['K']:.1f}, D={latest['D']:.1f}, J={latest['J']:.1f})
-- MACD: DIF={latest['MACD_DIF']:.4f}, DEA={latest['MACD_DEA']:.4f}
-- 布林带: 上轨${latest['BB_Upper']:.2f}, 中轨${latest['BB_Middle']:.2f}, 下轨${latest['BB_Lower']:.2f}
+- 均线: SMA5=${latest['SMA_5']:.2f}, SMA20=${latest['SMA_20']:.2f}, SMA60={sma60_str}
+- 动能: RSI={latest['RSI_14']:.2f}, KDJ(K={latest['KDJk_9_3_3']:.1f}, D={latest['KDJd_9_3_3']:.1f}, J={latest['KDJj_9_3_3']:.1f})
+- MACD: DIF={latest['MACD_12_26_9']:.4f}, DEA={latest['MACDs_12_26_9']:.4f}
+- 布林带: 上轨${latest['BBU_20_2.0']:.2f}, 中轨${latest['BBM_20_2.0']:.2f}, 下轨${latest['BBL_20_2.0']:.2f}
 - 成交量比率: {latest['Volume_Ratio']:.2f}
-- ATR: {latest['ATR']:.4f}
+- ATR: {latest['ATRr_14']:.4f}
 - 综合评分: {recommendation['score']:.1f}/100 ({recommendation['recommendation']})
 
 【信号要点】

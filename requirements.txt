@@ -5,6 +5,7 @@ litellm>=1.50.0,<2.0
 yfinance>=0.2.0,<1.0
 finnhub-python>=2.4.0,<3.0
 pandas>=2.2.0,<3.0
+pandas_ta>=0.3.14b1,<1.0
 numpy>=1.26.0,<3.0
 matplotlib>=3.9.0,<4.0
 mplfinance>=0.12.0,<1.0

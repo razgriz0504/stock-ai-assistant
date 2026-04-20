@@ -1,10 +1,10 @@
 """
 美股股票量价趋势分析器
-复用自现有 stock_analysis.py，移除代理配置，适配服务端调用
+使用 pandas_ta 计算技术指标，适配服务端调用
 """
 
 import pandas as pd
-import numpy as np
+import pandas_ta as ta
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -20,8 +20,6 @@ class StockAnalyzer:
         self.symbol = symbol.upper()
         self.period = period
         self.data = None
-        self.indicators = {}
-        self.signals = {}
         self.stock_name = self.symbol
 
     def fetch_data(self) -> pd.DataFrame:
@@ -32,338 +30,67 @@ class StockAnalyzer:
 
     # ==================== 技术指标计算 ====================
 
-    def calculate_ma(self, periods: list = None):
-        if periods is None:
-            periods = [5, 10, 20, 60, 120]
-        for period in periods:
-            self.data[f'MA{period}'] = self.data['Close'].rolling(window=period).mean()
-        self.indicators['MA'] = periods
-
-    def calculate_ema(self, periods: list = None):
-        if periods is None:
-            periods = [12, 26]
-        for period in periods:
-            self.data[f'EMA{period}'] = self.data['Close'].ewm(span=period, adjust=False).mean()
-        self.indicators['EMA'] = periods
-
-    def calculate_macd(self, fast: int = 12, slow: int = 26, signal: int = 9):
-        ema_fast = self.data['Close'].ewm(span=fast, adjust=False).mean()
-        ema_slow = self.data['Close'].ewm(span=slow, adjust=False).mean()
-        self.data['MACD_DIF'] = ema_fast - ema_slow
-        self.data['MACD_DEA'] = self.data['MACD_DIF'].ewm(span=signal, adjust=False).mean()
-        self.data['MACD_Histogram'] = 2 * (self.data['MACD_DIF'] - self.data['MACD_DEA'])
-        self.indicators['MACD'] = {'fast': fast, 'slow': slow, 'signal': signal}
-
-    def calculate_rsi(self, period: int = 14):
-        delta = self.data['Close'].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        rs = gain / loss
-        self.data['RSI'] = 100 - (100 / (1 + rs))
-        self.indicators['RSI'] = period
-
-    def calculate_kdj(self, n: int = 9, m1: int = 3, m2: int = 3):
-        low_min = self.data['Low'].rolling(window=n).min()
-        high_max = self.data['High'].rolling(window=n).max()
-        rsv = (self.data['Close'] - low_min) / (high_max - low_min) * 100
-        self.data['K'] = rsv.ewm(com=m1-1, adjust=False).mean()
-        self.data['D'] = self.data['K'].ewm(com=m2-1, adjust=False).mean()
-        self.data['J'] = 3 * self.data['K'] - 2 * self.data['D']
-        self.indicators['KDJ'] = {'n': n, 'm1': m1, 'm2': m2}
-
-    def calculate_bollinger_bands(self, period: int = 20, std_dev: int = 2):
-        self.data['BB_Middle'] = self.data['Close'].rolling(window=period).mean()
-        std = self.data['Close'].rolling(window=period).std()
-        self.data['BB_Upper'] = self.data['BB_Middle'] + (std * std_dev)
-        self.data['BB_Lower'] = self.data['BB_Middle'] - (std * std_dev)
-        self.data['BB_Width'] = (self.data['BB_Upper'] - self.data['BB_Lower']) / self.data['BB_Middle']
-        self.indicators['Bollinger'] = {'period': period, 'std_dev': std_dev}
-
-    def calculate_volume_indicators(self):
-        self.data['Volume_MA5'] = self.data['Volume'].rolling(window=5).mean()
-        self.data['Volume_MA20'] = self.data['Volume'].rolling(window=20).mean()
-        self.data['Volume_Ratio'] = self.data['Volume'] / self.data['Volume_MA20']
-
-        obv = [0]
-        for i in range(1, len(self.data)):
-            if self.data['Close'].iloc[i] > self.data['Close'].iloc[i-1]:
-                obv.append(obv[-1] + self.data['Volume'].iloc[i])
-            elif self.data['Close'].iloc[i] < self.data['Close'].iloc[i-1]:
-                obv.append(obv[-1] - self.data['Volume'].iloc[i])
-            else:
-                obv.append(obv[-1])
-        self.data['OBV'] = obv
-
-        self.data['VWAP'] = (
-            self.data['Volume'] * (self.data['High'] + self.data['Low'] + self.data['Close']) / 3
-        ).cumsum() / self.data['Volume'].cumsum()
-        self.indicators['Volume'] = True
-
-    def calculate_atr(self, period: int = 14):
-        high_low = self.data['High'] - self.data['Low']
-        high_close = np.abs(self.data['High'] - self.data['Close'].shift())
-        low_close = np.abs(self.data['Low'] - self.data['Close'].shift())
-        true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        self.data['ATR'] = true_range.rolling(window=period).mean()
-        self.indicators['ATR'] = period
-
     def calculate_all_indicators(self):
-        self.calculate_ma()
-        self.calculate_ema()
-        self.calculate_macd()
-        self.calculate_rsi()
-        self.calculate_kdj()
-        self.calculate_bollinger_bands()
-        self.calculate_volume_indicators()
-        self.calculate_atr()
-
-    # ==================== 趋势分析 ====================
-
-    def analyze_ma_trend(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {
-            'short_term': None, 'medium_term': None, 'long_term': None,
-            'golden_cross': False, 'death_cross': False,
-        }
-        signals['short_term'] = 'bullish' if latest['MA5'] > latest['MA10'] else 'bearish'
-        signals['medium_term'] = 'bullish' if latest['MA10'] > latest['MA20'] else 'bearish'
-
-        if pd.notna(latest.get('MA60')):
-            signals['long_term'] = 'bullish' if latest['MA20'] > latest['MA60'] else 'bearish'
-
-        if len(self.data) >= 2:
-            prev = self.data.iloc[-2]
-            if prev['MA5'] <= prev['MA20'] and latest['MA5'] > latest['MA20']:
-                signals['golden_cross'] = True
-            elif prev['MA5'] >= prev['MA20'] and latest['MA5'] < latest['MA20']:
-                signals['death_cross'] = True
-
-        self.signals['MA'] = signals
-        return signals
-
-    def analyze_macd_trend(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {
-            'dif_position': None, 'histogram_trend': None,
-            'golden_cross': False, 'death_cross': False,
-        }
-        signals['dif_position'] = 'above_zero' if latest['MACD_DIF'] > 0 else 'below_zero'
-
-        recent_hist = self.data['MACD_Histogram'].tail(5)
-        signals['histogram_trend'] = 'increasing' if recent_hist.iloc[-1] > recent_hist.iloc[-2] else 'decreasing'
-
-        if len(self.data) >= 2:
-            prev = self.data.iloc[-2]
-            if prev['MACD_DIF'] <= prev['MACD_DEA'] and latest['MACD_DIF'] > latest['MACD_DEA']:
-                signals['golden_cross'] = True
-            elif prev['MACD_DIF'] >= prev['MACD_DEA'] and latest['MACD_DIF'] < latest['MACD_DEA']:
-                signals['death_cross'] = True
-
-        self.signals['MACD'] = signals
-        return signals
-
-    def analyze_rsi(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {'level': None, 'divergence': None, 'value': latest['RSI']}
-
-        if latest['RSI'] > 70:
-            signals['level'] = 'overbought'
-        elif latest['RSI'] < 30:
-            signals['level'] = 'oversold'
-        else:
-            signals['level'] = 'neutral'
-
-        recent = self.data.tail(20)
-        if len(recent) >= 20:
-            price_trend = recent['Close'].iloc[-1] > recent['Close'].iloc[0]
-            rsi_trend = recent['RSI'].iloc[-1] > recent['RSI'].iloc[0]
-            if price_trend and not rsi_trend:
-                signals['divergence'] = 'bearish'
-            elif not price_trend and rsi_trend:
-                signals['divergence'] = 'bullish'
-
-        self.signals['RSI'] = signals
-        return signals
-
-    def analyze_kdj(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {'level': None, 'golden_cross': False, 'death_cross': False, 'j_extreme': None}
-
-        if latest['K'] > 80 and latest['D'] > 80:
-            signals['level'] = 'overbought'
-        elif latest['K'] < 20 and latest['D'] < 20:
-            signals['level'] = 'oversold'
-        else:
-            signals['level'] = 'neutral'
-
-        if latest['J'] > 100:
-            signals['j_extreme'] = 'overbought'
-        elif latest['J'] < 0:
-            signals['j_extreme'] = 'oversold'
-
-        if len(self.data) >= 2:
-            prev = self.data.iloc[-2]
-            if prev['K'] <= prev['D'] and latest['K'] > latest['D']:
-                signals['golden_cross'] = True
-            elif prev['K'] >= prev['D'] and latest['K'] < latest['D']:
-                signals['death_cross'] = True
-
-        self.signals['KDJ'] = signals
-        return signals
-
-    def analyze_bollinger(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {'position': None, 'squeeze': False, 'breakout': None}
-        bb_percent = (latest['Close'] - latest['BB_Lower']) / (latest['BB_Upper'] - latest['BB_Lower'])
-
-        if latest['Close'] > latest['BB_Upper']:
-            signals['position'] = 'above_upper'
-            signals['breakout'] = 'upward'
-        elif latest['Close'] < latest['BB_Lower']:
-            signals['position'] = 'below_lower'
-            signals['breakout'] = 'downward'
-        elif bb_percent > 0.8:
-            signals['position'] = 'upper_zone'
-        elif bb_percent < 0.2:
-            signals['position'] = 'lower_zone'
-        else:
-            signals['position'] = 'middle_zone'
-
-        recent_width = self.data['BB_Width'].tail(20)
-        if latest['BB_Width'] < recent_width.mean() * 0.8:
-            signals['squeeze'] = True
-
-        self.signals['Bollinger'] = signals
-        return signals
-
-    def analyze_volume(self) -> dict:
-        latest = self.data.iloc[-1]
-        signals = {'volume_trend': None, 'price_volume_relation': None, 'volume_breakout': False}
-
-        signals['volume_trend'] = 'increasing' if latest['Volume'] > latest['Volume_MA5'] else 'decreasing'
-        signals['volume_breakout'] = latest['Volume_Ratio'] > 1.5
-
-        price_change = (latest['Close'] - self.data.iloc[-2]['Close']) / self.data.iloc[-2]['Close']
-        volume_change = (latest['Volume'] - self.data.iloc[-2]['Volume']) / self.data.iloc[-2]['Volume']
-
-        if price_change > 0 and volume_change > 0:
-            signals['price_volume_relation'] = 'price_up_volume_up'
-        elif price_change > 0 and volume_change < 0:
-            signals['price_volume_relation'] = 'price_up_volume_down'
-        elif price_change < 0 and volume_change > 0:
-            signals['price_volume_relation'] = 'price_down_volume_up'
-        else:
-            signals['price_volume_relation'] = 'price_down_volume_down'
-
-        self.signals['Volume'] = signals
-        return signals
-
-    def analyze_all(self):
-        self.analyze_ma_trend()
-        self.analyze_macd_trend()
-        self.analyze_rsi()
-        self.analyze_kdj()
-        self.analyze_bollinger()
-        self.analyze_volume()
+        """使用 pandas_ta 计算全部技术指标"""
+        # SMA
+        for length in [5, 10, 20, 60, 120]:
+            self.data.ta.sma(length=length, append=True)
+        # EMA
+        self.data.ta.ema(length=12, append=True)
+        self.data.ta.ema(length=26, append=True)
+        # MACD
+        self.data.ta.macd(fast=12, slow=26, signal=9, append=True)
+        # RSI
+        self.data.ta.rsi(length=14, append=True)
+        # KDJ
+        self.data.ta.kdj(length=9, signal=3, append=True)
+        # 布林带
+        self.data.ta.bbands(length=20, std=2, append=True)
+        # ATR
+        self.data.ta.atr(length=14, append=True)
+        # OBV
+        self.data.ta.obv(append=True)
+        # VWAP
+        self.data.ta.vwap(append=True)
+        # 成交量均线 (pandas_ta SMA 默认用 Close，需手动指定 Volume)
+        self.data['Vol_SMA_5'] = ta.sma(self.data['Volume'], length=5)
+        self.data['Vol_SMA_20'] = ta.sma(self.data['Volume'], length=20)
+        self.data['Volume_Ratio'] = self.data['Volume'] / self.data['Vol_SMA_20']
 
     # ==================== 投资建议生成 ====================
 
     def generate_recommendation(self) -> dict:
-        bullish_signals = 0
-        bearish_signals = 0
-        details = []
+        score, details = calculate_score(self.data)
 
-        ma = self.signals.get('MA', {})
-        if ma.get('short_term') == 'bullish':
-            bullish_signals += 1; details.append("短期均线呈多头排列")
-        else:
-            bearish_signals += 1; details.append("短期均线呈空头排列")
+        # 将 1-5 分映射到 0-100 分 (保持调用方兼容)
+        score_100 = (score - 1) / 4 * 100
 
-        if ma.get('golden_cross'):
-            bullish_signals += 2; details.append("出现均线金叉信号")
-        if ma.get('death_cross'):
-            bearish_signals += 2; details.append("出现均线死叉信号")
-
-        macd = self.signals.get('MACD', {})
-        if macd.get('dif_position') == 'above_zero':
-            bullish_signals += 1; details.append("MACD在零轴上方运行")
-        else:
-            bearish_signals += 1; details.append("MACD在零轴下方运行")
-
-        if macd.get('golden_cross'):
-            bullish_signals += 2; details.append("MACD金叉")
-        if macd.get('death_cross'):
-            bearish_signals += 2; details.append("MACD死叉")
-
-        if macd.get('histogram_trend') == 'increasing':
-            bullish_signals += 1; details.append("MACD柱状图增长")
-        else:
-            bearish_signals += 1; details.append("MACD柱状图收缩")
-
-        rsi = self.signals.get('RSI', {})
-        if rsi.get('level') == 'overbought':
-            bearish_signals += 1; details.append(f"RSI处于超买区域 ({rsi.get('value', 0):.1f})")
-        elif rsi.get('level') == 'oversold':
-            bullish_signals += 1; details.append(f"RSI处于超卖区域 ({rsi.get('value', 0):.1f})")
-
-        if rsi.get('divergence') == 'bullish':
-            bullish_signals += 2; details.append("RSI出现底背离")
-        elif rsi.get('divergence') == 'bearish':
-            bearish_signals += 2; details.append("RSI出现顶背离")
-
-        kdj = self.signals.get('KDJ', {})
-        if kdj.get('golden_cross'):
-            bullish_signals += 1; details.append("KDJ金叉")
-        if kdj.get('death_cross'):
-            bearish_signals += 1; details.append("KDJ死叉")
-        if kdj.get('j_extreme') == 'overbought':
-            bearish_signals += 1; details.append("J值超买")
-        elif kdj.get('j_extreme') == 'oversold':
-            bullish_signals += 1; details.append("J值超卖")
-
-        bb = self.signals.get('Bollinger', {})
-        if bb.get('breakout') == 'upward':
-            bullish_signals += 1; details.append("价格突破布林带上轨")
-        elif bb.get('breakout') == 'downward':
-            bearish_signals += 1; details.append("价格跌破布林带下轨")
-        if bb.get('squeeze'):
-            details.append("布林带收窄，可能即将变盘")
-
-        vol = self.signals.get('Volume', {})
-        if vol.get('price_volume_relation') == 'price_up_volume_up':
-            bullish_signals += 1; details.append("量价配合良好，上涨有量支撑")
-        elif vol.get('price_volume_relation') == 'price_down_volume_up':
-            bearish_signals += 1; details.append("放量下跌，抛压较重")
-        elif vol.get('price_volume_relation') == 'price_up_volume_down':
-            details.append("缩量上涨，需警惕上涨动能不足")
-        elif vol.get('price_volume_relation') == 'price_down_volume_down':
-            details.append("缩量下跌，下跌动能减弱")
-
-        total_weight = bullish_signals + bearish_signals
-        score = (bullish_signals / total_weight) * 100 if total_weight > 0 else 50
-
-        if score >= 70:
+        if score >= 4.0:
             recommendation = "买入"
-            action_advice = "当前多项技术指标显示看涨信号，可以考虑逢低买入或加仓"
-        elif score >= 55:
+            action_advice = "趋势、动能、量价多项指标共振看多，可以考虑逢低买入或加仓"
+        elif score >= 3.5:
             recommendation = "谨慎看多"
-            action_advice = "技术面偏多，但信号不够强烈，建议轻仓参与或持有观望"
-        elif score >= 45:
+            action_advice = "技术面偏多但信号不够强烈，建议轻仓参与或持有观望"
+        elif score >= 2.5:
             recommendation = "观望"
-            action_advice = "多空信号交织，建议观望等待更明确的方向信号"
-        elif score >= 30:
+            action_advice = "多空信号交织，建议等待更明确的方向信号"
+        elif score >= 2.0:
             recommendation = "谨慎看空"
             action_advice = "技术面偏空，建议减仓或暂不介入"
         else:
             recommendation = "卖出"
-            action_advice = "多项技术指标显示看跌信号，建议减仓或止损"
+            action_advice = "趋势、动能指标显示空头主导，建议减仓或止损"
+
+        bullish = sum(1 for d in details if '多头' in d or '扩张' in d or '强势' in d or '放量确认' in d or '向上' in d)
+        bearish = sum(1 for d in details if '空头' in d or '超跌' in d)
 
         return {
-            'score': score,
+            'score': score_100,
+            'score_raw': score,
             'recommendation': recommendation,
             'action_advice': action_advice,
-            'bullish_signals': bullish_signals,
-            'bearish_signals': bearish_signals,
+            'bullish_signals': bullish,
+            'bearish_signals': bearish,
             'details': details,
         }
 
@@ -389,14 +116,14 @@ class StockAnalyzer:
         lines.append(f"  分析日期: {latest.name.strftime('%Y-%m-%d')}")
         lines.append("")
         lines.append("【技术指标】")
-        lines.append(f"  MA5: ${latest['MA5']:.2f}  MA10: ${latest['MA10']:.2f}  MA20: ${latest['MA20']:.2f}")
-        if pd.notna(latest.get('MA60')):
-            lines.append(f"  MA60: ${latest['MA60']:.2f}")
-        lines.append(f"  MACD DIF: {latest['MACD_DIF']:.4f}  DEA: {latest['MACD_DEA']:.4f}")
-        lines.append(f"  RSI(14): {latest['RSI']:.2f}")
-        lines.append(f"  K: {latest['K']:.2f}  D: {latest['D']:.2f}  J: {latest['J']:.2f}")
-        lines.append(f"  布林带: 上轨${latest['BB_Upper']:.2f} 中轨${latest['BB_Middle']:.2f} 下轨${latest['BB_Lower']:.2f}")
-        lines.append(f"  ATR(14): {latest['ATR']:.4f}")
+        lines.append(f"  SMA5: ${latest['SMA_5']:.2f}  SMA10: ${latest['SMA_10']:.2f}  SMA20: ${latest['SMA_20']:.2f}")
+        if 'SMA_60' in latest.index and pd.notna(latest.get('SMA_60')):
+            lines.append(f"  SMA60: ${latest['SMA_60']:.2f}")
+        lines.append(f"  MACD: {latest['MACD_12_26_9']:.4f}  Signal: {latest['MACDs_12_26_9']:.4f}")
+        lines.append(f"  RSI(14): {latest['RSI_14']:.2f}")
+        lines.append(f"  K: {latest['KDJk_9_3_3']:.2f}  D: {latest['KDJd_9_3_3']:.2f}  J: {latest['KDJj_9_3_3']:.2f}")
+        lines.append(f"  布林带: 上轨${latest['BBU_20_2.0']:.2f} 中轨${latest['BBM_20_2.0']:.2f} 下轨${latest['BBL_20_2.0']:.2f}")
+        lines.append(f"  ATR(14): {latest['ATRr_14']:.4f}")
         lines.append(f"  成交量比率: {latest['Volume_Ratio']:.2f}")
         lines.append("")
         lines.append("【信号分析】")
@@ -405,7 +132,7 @@ class StockAnalyzer:
         lines.append("")
         lines.append("【综合评估】")
         lines.append(f"  多头信号: {recommendation['bullish_signals']}  空头信号: {recommendation['bearish_signals']}")
-        lines.append(f"  综合评分: {recommendation['score']:.1f}/100")
+        lines.append(f"  综合评分: {recommendation['score']:.1f}/100 (原始分: {recommendation['score_raw']:.1f}/5)")
         lines.append("")
         lines.append("【投资建议】")
         lines.append(f"  建议操作: {recommendation['recommendation']}")
@@ -420,5 +147,67 @@ class StockAnalyzer:
     def run_analysis(self) -> str:
         self.fetch_data()
         self.calculate_all_indicators()
-        self.analyze_all()
         return self.generate_report()
+
+
+def calculate_score(ticker_data):
+    """基于趋势/动能/KDJ/量价的综合评分 (1-5 分)"""
+    df = ticker_data.copy()
+    # 1. 计算核心指标
+    # 趋势指标：EMA20, EMA50
+    df.ta.ema(length=20, append=True)
+    df.ta.ema(length=50, append=True)
+    # 动能指标：MACD
+    df.ta.macd(fast=12, slow=26, signal=9, append=True)
+    # 强度指标：KDJ
+    df.ta.kdj(length=9, signal=3, append=True)
+    # 量能指标：成交量比率
+    df['vol_ma20'] = ta.sma(df['Volume'], length=20)
+
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    score = 3.0  # 基准分
+    details = []
+
+    # --- 逻辑 A: 趋势得分 (权重 40%) ---
+    # 多头排列判定
+    if curr['Close'] > curr['EMA_20'] > curr['EMA_50']:
+        score += 1.0
+        details.append("多头排列：价格 > EMA20 > EMA50")
+        if curr['EMA_20'] > prev['EMA_20']:
+            score += 0.5  # 斜率向上
+            details.append("EMA20 斜率向上，趋势加强")
+    elif curr['Close'] < curr['EMA_20'] < curr['EMA_50']:
+        score -= 1.5  # 极度空头
+        details.append("空头排列：价格 < EMA20 < EMA50")
+
+    # --- 逻辑 B: MACD 动能确认 (权重 30%) ---
+    macd_val = curr['MACD_12_26_9']
+    macd_hist = curr['MACDh_12_26_9']
+    if macd_val > 0 and macd_hist > 0:  # 0轴上多头放量
+        score += 0.5
+        details.append("MACD 零轴上方多头放量")
+    if macd_hist > prev['MACDh_12_26_9']:  # 动能柱扩张
+        score += 0.5
+        details.append("MACD 动能柱扩张")
+    if macd_val < 0 and macd_hist < 0:  # 空头主导
+        score -= 1.0
+        details.append("MACD 空头主导")
+
+    # --- 逻辑 C: KDJ 状态 (权重 20%) ---
+    j_val = curr['KDJj_9_3_3']
+    if j_val > 80:  # 强势区/钝化
+        score += 0.5
+        details.append(f"KDJ J值={j_val:.1f}，强势区")
+    elif j_val < 20:  # 超跌区
+        score -= 0.5
+        details.append(f"KDJ J值={j_val:.1f}，超跌区")
+
+    # --- 逻辑 D: 量价突破 (权重 10%) ---
+    if curr['Volume'] > curr['vol_ma20'] * 1.5 and curr['Close'] > prev['Close']:
+        score += 0.5  # 放量确认
+        details.append("放量确认：成交量超过 MA20 的 1.5 倍")
+
+    final_score = min(max(score, 1.0), 5.0)  # 限制在 1-5 分
+    return final_score, details

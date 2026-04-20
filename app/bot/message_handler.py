@@ -11,7 +11,6 @@ from app.analysis.chart_generator import generate_chart
 from app.llm.client import chat, set_model, get_model, list_models, SUPPORTED_MODELS
 from app.monitor.price_monitor import add_monitor_rule, remove_monitor_rules, list_user_monitors
 from app.backtest.engine import run_backtest
-from app.analysis.stock_analyzer import StockAnalyzer
 
 logger = logging.getLogger(__name__)
 
