@@ -42,7 +42,7 @@ def generate_chart(symbol: str, period: str = "1y") -> str:
         if 'SMA_60' in plot_df.columns:
             ax1.plot(dates, plot_df['SMA_60'], label='SMA60', color='#4CAF50', linewidth=1.5, alpha=0.7)
 
-        ax1.fill_between(dates, plot_df['BBU_20_2.0'], plot_df['BBL_20_2.0'], alpha=0.1, color='gray', label='Bollinger')
+        ax1.fill_between(dates, plot_df['BBU_20_2.0_2.0'], plot_df['BBL_20_2.0_2.0'], alpha=0.1, color='gray', label='Bollinger')
         ax1.legend(loc='upper left', fontsize=8)
         ax1.grid(True, alpha=0.3)
         ax1.set_ylabel("Price ($)")

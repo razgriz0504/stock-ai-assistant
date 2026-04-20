@@ -121,8 +121,8 @@ class StockAnalyzer:
             lines.append(f"  SMA60: ${latest['SMA_60']:.2f}")
         lines.append(f"  MACD: {latest['MACD_12_26_9']:.4f}  Signal: {latest['MACDs_12_26_9']:.4f}")
         lines.append(f"  RSI(14): {latest['RSI_14']:.2f}")
-        lines.append(f"  K: {latest['KDJk_9_3_3']:.2f}  D: {latest['KDJd_9_3_3']:.2f}  J: {latest['KDJj_9_3_3']:.2f}")
-        lines.append(f"  布林带: 上轨${latest['BBU_20_2.0']:.2f} 中轨${latest['BBM_20_2.0']:.2f} 下轨${latest['BBL_20_2.0']:.2f}")
+        lines.append(f"  K: {latest['K_9_3']:.2f}  D: {latest['D_9_3']:.2f}  J: {latest['J_9_3']:.2f}")
+        lines.append(f"  布林带: 上轨${latest['BBU_20_2.0_2.0']:.2f} 中轨${latest['BBM_20_2.0_2.0']:.2f} 下轨${latest['BBL_20_2.0_2.0']:.2f}")
         lines.append(f"  ATR(14): {latest['ATRr_14']:.4f}")
         lines.append(f"  成交量比率: {latest['Volume_Ratio']:.2f}")
         lines.append("")
@@ -196,7 +196,7 @@ def calculate_score(ticker_data):
         details.append("MACD 空头主导")
 
     # --- 逻辑 C: KDJ 状态 (权重 20%) ---
-    j_val = curr['KDJj_9_3_3']
+    j_val = curr['J_9_3']
     if j_val > 80:  # 强势区/钝化
         score += 0.5
         details.append(f"KDJ J值={j_val:.1f}，强势区")

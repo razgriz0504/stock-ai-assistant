@@ -213,8 +213,8 @@ def _extract_tech_info(analyzer: StockAnalyzer) -> dict:
     latest = analyzer.data.iloc[-1]
 
     # KDJ
-    if pd.notna(latest.get('KDJk_9_3_3')):
-        tech["KDJ"] = f"K:{latest['KDJk_9_3_3']:.0f} D:{latest['KDJd_9_3_3']:.0f} J:{latest['KDJj_9_3_3']:.0f}"
+    if pd.notna(latest.get('K_9_3')):
+        tech["KDJ"] = f"K:{latest['K_9_3']:.0f} D:{latest['D_9_3']:.0f} J:{latest['J_9_3']:.0f}"
 
     # MACD
     if pd.notna(latest.get('MACD_12_26_9')):

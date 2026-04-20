@@ -36,9 +36,9 @@ async def analyze_with_ai(symbol: str, period: str = "1y") -> tuple[str, str]:
 【技术数据摘要】
 - 当前价格: ${latest['Close']:.2f} (昨日: ${prev['Close']:.2f})
 - 均线: SMA5=${latest['SMA_5']:.2f}, SMA20=${latest['SMA_20']:.2f}, SMA60={sma60_str}
-- 动能: RSI={latest['RSI_14']:.2f}, KDJ(K={latest['KDJk_9_3_3']:.1f}, D={latest['KDJd_9_3_3']:.1f}, J={latest['KDJj_9_3_3']:.1f})
+- 动能: RSI={latest['RSI_14']:.2f}, KDJ(K={latest['K_9_3']:.1f}, D={latest['D_9_3']:.1f}, J={latest['J_9_3']:.1f})
 - MACD: DIF={latest['MACD_12_26_9']:.4f}, DEA={latest['MACDs_12_26_9']:.4f}
-- 布林带: 上轨${latest['BBU_20_2.0']:.2f}, 中轨${latest['BBM_20_2.0']:.2f}, 下轨${latest['BBL_20_2.0']:.2f}
+- 布林带: 上轨${latest['BBU_20_2.0_2.0']:.2f}, 中轨${latest['BBM_20_2.0_2.0']:.2f}, 下轨${latest['BBL_20_2.0_2.0']:.2f}
 - 成交量比率: {latest['Volume_Ratio']:.2f}
 - ATR: {latest['ATRr_14']:.4f}
 - 综合评分: {recommendation['score']:.1f}/100 ({recommendation['recommendation']})
