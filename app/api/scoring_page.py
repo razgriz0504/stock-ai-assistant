@@ -309,8 +309,7 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 5: Stock Scoring (暂时隐藏) -->
-  <div id="section-stocks-wrap" style="display:none">
+  <!-- Section 5: Stock Scoring -->
   <div class="sec-head" style="margin-top:48px">
     <span class="sec-num">05</span>
     <h2 class="sec-title">个股评分</h2>
@@ -319,7 +318,6 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
   <div id="section-stocks">
     <div class="loading-box">加载中...</div>
   </div>
-  </div><!-- end section-stocks-wrap -->
 
 </div>
 
