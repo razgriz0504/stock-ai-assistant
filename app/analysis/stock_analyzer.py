@@ -65,6 +65,19 @@ class StockAnalyzer:
         # 将 1-5 分映射到 0-100 分 (保持调用方兼容)
         score_100 = (score - 1) / 4 * 100
 
+        # 字母等级 (基于 0-100 分)
+        if score_100 >= 90:
+            rating = "AA"
+        elif score_100 >= 80:
+            rating = "A"
+        elif score_100 >= 70:
+            rating = "B"
+        elif score_100 >= 60:
+            rating = "C"
+        else:
+            rating = "D"
+
+        # 中文建议
         if score >= 4.0:
             recommendation = "买入"
             action_advice = "趋势、动能、量价多项指标共振看多，可以考虑逢低买入或加仓"
@@ -87,6 +100,7 @@ class StockAnalyzer:
         return {
             'score': score_100,
             'score_raw': score,
+            'rating': rating,
             'recommendation': recommendation,
             'action_advice': action_advice,
             'bullish_signals': bullish,
@@ -132,7 +146,7 @@ class StockAnalyzer:
         lines.append("")
         lines.append("【综合评估】")
         lines.append(f"  多头信号: {recommendation['bullish_signals']}  空头信号: {recommendation['bearish_signals']}")
-        lines.append(f"  综合评分: {recommendation['score']:.1f}/100 (原始分: {recommendation['score_raw']:.1f}/5)")
+        lines.append(f"  综合评分: {recommendation['score']:.1f}/100 (原始分: {recommendation['score_raw']:.1f}/5)  等级: {recommendation['rating']}")
         lines.append("")
         lines.append("【投资建议】")
         lines.append(f"  建议操作: {recommendation['recommendation']}")

@@ -271,7 +271,8 @@ def score_stocks(symbols: list[str], period: str = "3mo") -> list[dict]:
             return {
                 "symbol": symbol,
                 "score": round(rec["score"], 1),
-                "rating": rec["recommendation"],
+                "rating": rec["rating"],
+                "recommendation": rec["recommendation"],
                 "price": round(quote.price, 2) if quote else None,
                 "change_pct": round(quote.change_pct, 2) if quote else None,
                 "tech": tech,
