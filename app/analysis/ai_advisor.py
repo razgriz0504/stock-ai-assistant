@@ -41,7 +41,7 @@ async def analyze_with_ai(symbol: str, period: str = "1y") -> tuple[str, str]:
 - 布林带: 上轨${latest['BBU_20_2.0_2.0']:.2f}, 中轨${latest['BBM_20_2.0_2.0']:.2f}, 下轨${latest['BBL_20_2.0_2.0']:.2f}
 - 成交量比率: {latest['Volume_Ratio']:.2f}
 - ATR: {latest['ATRr_14']:.4f}
-- 综合评分: {recommendation['score']:.1f}/100 ({recommendation['recommendation']})
+- 综合评分: {recommendation['score']:.1f}/5 ({recommendation['rating']}, {recommendation['recommendation']})
 
 【信号要点】
 {chr(10).join('- ' + d for d in recommendation['details'])}

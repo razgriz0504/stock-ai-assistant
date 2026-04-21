@@ -314,6 +314,20 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <span class="sec-num">05</span>
     <h2 class="sec-title">个股评分</h2>
     <span class="sec-sub">Stock Scoring</span>
+    <span class="score-help" style="margin-left:8px;cursor:help;position:relative;display:inline-block;">
+      <span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#c8b88a;color:#fff;font-size:12px;font-weight:700;">?</span>
+      <span class="score-help-tip" style="display:none;position:absolute;left:24px;top:-10px;z-index:100;background:#1a1a1a;color:#e8e4d9;padding:14px 16px;border-radius:8px;font-size:12px;line-height:1.7;width:340px;box-shadow:0 4px 16px rgba(0,0,0,.3);font-weight:400;white-space:normal;">
+        <b>评分规则 (1~5 分)</b><br>
+        基准分 <b>3.0</b>，按四维指标加减分：<br>
+        <b>A. 趋势 (40%)</b> EMA20/EMA50 多头排列 +1.0，斜率向上 +0.5，空头排列 -1.5<br>
+        <b>B. MACD (30%)</b> 零轴上多头放量 +0.5，动能柱扩张 +0.5，空头主导 -1.0<br>
+        <b>C. KDJ (20%)</b> J&gt;80 强势区 +0.5，J&lt;20 超跌区 -0.5<br>
+        <b>D. 量价 (10%)</b> 放量上涨 (+50%量) +0.5<br>
+        <span style="margin-top:6px;display:block;border-top:1px solid #333;padding-top:6px;">
+        等级: AA ≥4.5 | A ≥4.0 | B ≥3.0 | C ≥2.0 | D &lt;2.0
+        </span>
+      </span>
+    </span>
   </div>
   <div id="section-stocks">
     <div class="loading-box">加载中...</div>
@@ -326,6 +340,16 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
 <script>
+/* ─── Score help tooltip ─── */
+document.addEventListener('DOMContentLoaded', function() {
+  const helpEl = document.querySelector('.score-help');
+  const tipEl = document.querySelector('.score-help-tip');
+  if (helpEl && tipEl) {
+    helpEl.addEventListener('mouseenter', function() { tipEl.style.display = 'block'; });
+    helpEl.addEventListener('mouseleave', function() { tipEl.style.display = 'none'; });
+  }
+});
+
 /* ─── Utilities ─── */
 function chgClass(v) { return v >= 0 ? 'up' : 'down'; }
 function chgStr(v) { return (v >= 0 ? '+' : '') + v.toFixed(2) + '%'; }
@@ -440,7 +464,7 @@ function renderStocks(data) {
       }
       return `<div class="stock-card">
         <div class="stock-card-head"><span class="stock-sym">${s.symbol}</span><span class="stock-badge ${badgeCls(s.rating)}">${s.rating}</span></div>
-        <div class="stock-score"><div class="stock-score-val">${s.score}</div><div class="stock-score-label">综合评分</div></div>
+        <div class="stock-score"><div class="stock-score-val">${s.score}/5</div><div class="stock-score-label">综合评分</div></div>
         <div class="stock-price-row">
           <span>当前价 <span class="stock-price-val">${fmtPrice(s.price)}</span></span>
           <span class="stock-price-chg ${chgClass(s.change_pct)}">${chgStr(s.change_pct)}</span>

@@ -62,17 +62,14 @@ class StockAnalyzer:
     def generate_recommendation(self) -> dict:
         score, details = calculate_score(self.data)
 
-        # 将 1-5 分映射到 0-100 分 (保持调用方兼容)
-        score_100 = (score - 1) / 4 * 100
-
-        # 字母等级 (基于 0-100 分)
-        if score_100 >= 90:
+        # 字母等级 (基于 1-5 分)
+        if score >= 4.5:
             rating = "AA"
-        elif score_100 >= 80:
+        elif score >= 4.0:
             rating = "A"
-        elif score_100 >= 70:
+        elif score >= 3.0:
             rating = "B"
-        elif score_100 >= 60:
+        elif score >= 2.0:
             rating = "C"
         else:
             rating = "D"
@@ -98,8 +95,7 @@ class StockAnalyzer:
         bearish = sum(1 for d in details if '空头' in d or '超跌' in d)
 
         return {
-            'score': score_100,
-            'score_raw': score,
+            'score': score,
             'rating': rating,
             'recommendation': recommendation,
             'action_advice': action_advice,
@@ -146,7 +142,7 @@ class StockAnalyzer:
         lines.append("")
         lines.append("【综合评估】")
         lines.append(f"  多头信号: {recommendation['bullish_signals']}  空头信号: {recommendation['bearish_signals']}")
-        lines.append(f"  综合评分: {recommendation['score']:.1f}/100 (原始分: {recommendation['score_raw']:.1f}/5)  等级: {recommendation['rating']}")
+        lines.append(f"  综合评分: {recommendation['score']:.1f}/5  等级: {recommendation['rating']}")
         lines.append("")
         lines.append("【投资建议】")
         lines.append(f"  建议操作: {recommendation['recommendation']}")
