@@ -2,6 +2,7 @@
 import asyncio
 import json
 import logging
+import pandas as pd
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
