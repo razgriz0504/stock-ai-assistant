@@ -239,8 +239,8 @@ async def test_connection(req: TestRequest):
 
     start = time.time()
     try:
-        from litellm import completion
-        response = await asyncio.to_thread(completion, **kwargs)
+        from litellm import acompletion
+        response = await asyncio.wait_for(acompletion(**kwargs), timeout=30)
         elapsed = int((time.time() - start) * 1000)
         text = response.choices[0].message.content[:50]
         return {"success": True, "message": f"连接成功! ({elapsed}ms)", "response_time_ms": elapsed}

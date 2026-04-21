@@ -2,7 +2,7 @@ import os
 import logging
 import asyncio
 from typing import Optional
-from litellm import completion
+from litellm import completion, acompletion
 
 from config import settings
 
@@ -165,7 +165,6 @@ async def chat(
             "model": use_model,
             "messages": messages,
             "timeout": timeout,
-            "request_timeout": timeout,
         }
 
         if use_model in _CUSTOM_API_BASE:
@@ -181,7 +180,11 @@ async def chat(
         if web_search and use_model.startswith("gemini/"):
             kwargs["tools"] = [{"google_search": {}}]
 
-        response = await asyncio.to_thread(completion, **kwargs)
+        # 使用 litellm 原生异步接口，避免 asyncio.to_thread 导致的超时问题
+        response = await asyncio.wait_for(
+            acompletion(**kwargs),
+            timeout=timeout + 30,  # 比 litellm 内部超时多 30s 余量
+        )
 
         # Guard against empty response (e.g. SAFETY filter still blocks)
         if not response.choices:
