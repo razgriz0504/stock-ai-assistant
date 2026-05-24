@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 import pandas_ta as ta
 
@@ -17,6 +18,23 @@ from app.screener.filters import apply_fundamental_filters, apply_technical_filt
 from app.analysis.stock_analyzer import calculate_score
 
 logger = logging.getLogger(__name__)
+
+
+class _NumpyEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy types."""
+
+    def default(self, obj):
+        if isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        if isinstance(obj, (np.integer,)):
+            return int(obj)
+        if isinstance(obj, (np.floating,)):
+            if np.isnan(obj) or np.isinf(obj):
+                return None
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super().default(obj)
 
 _yf_provider = YFinanceProvider()
 
@@ -273,8 +291,8 @@ async def _execute_screener(
                     revenue_growth=info.get("revenue_growth"),
                     roe=info.get("roe"),
                     dividend_yield=info.get("dividend_yield"),
-                    filter_details_json=json.dumps(filter_details),
-                    indicators_json=json.dumps(indicators_snapshot),
+                    filter_details_json=json.dumps(filter_details, cls=_NumpyEncoder),
+                    indicators_json=json.dumps(indicators_snapshot, cls=_NumpyEncoder),
                 ))
             except Exception as e:
                 logger.warning(f"Screener error for {sym}: {e}")
