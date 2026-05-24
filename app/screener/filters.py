@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════
 
 def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
-    """MA multi-timeframe arrangement filter.
+    """EMA multi-timeframe arrangement filter.
 
-    Daily: Close > SMA_5 > SMA_10 > SMA_20, all sloping upward
-    Weekly: Close > SMA_5w > SMA_10w > SMA_20w, all sloping upward
+    Daily: Close > EMA_5 > EMA_10 > EMA_20, all sloping upward
+    Weekly: Close > EMA_5w > EMA_10w > EMA_20w, all sloping upward
 
     params: {"direction": "bullish" | "bearish"}
     """
@@ -38,32 +38,32 @@ def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
     prev = df.iloc[-2]
     close = last["Close"]
 
-    sma5 = last.get("SMA_5")
-    sma10 = last.get("SMA_10")
-    sma20 = last.get("SMA_20")
-    if any(v is None or pd.isna(v) for v in [sma5, sma10, sma20]):
+    ema5 = last.get("EMA_5")
+    ema10 = last.get("EMA_10")
+    ema20 = last.get("EMA_20")
+    if any(v is None or pd.isna(v) for v in [ema5, ema10, ema20]):
         return False
 
     # Daily arrangement
     if direction == "bullish":
-        if not (close > sma5 > sma10 > sma20):
+        if not (close > ema5 > ema10 > ema20):
             return False
     else:
-        if not (close < sma5 < sma10 < sma20):
+        if not (close < ema5 < ema10 < ema20):
             return False
 
-    # Daily slope: all MAs rising (compare with previous day)
-    prev_sma5 = prev.get("SMA_5")
-    prev_sma10 = prev.get("SMA_10")
-    prev_sma20 = prev.get("SMA_20")
-    if any(v is None or pd.isna(v) for v in [prev_sma5, prev_sma10, prev_sma20]):
+    # Daily slope: all EMAs rising (compare with previous day)
+    prev_ema5 = prev.get("EMA_5")
+    prev_ema10 = prev.get("EMA_10")
+    prev_ema20 = prev.get("EMA_20")
+    if any(v is None or pd.isna(v) for v in [prev_ema5, prev_ema10, prev_ema20]):
         return False
 
     if direction == "bullish":
-        if not (sma5 > prev_sma5 and sma10 > prev_sma10 and sma20 > prev_sma20):
+        if not (ema5 > prev_ema5 and ema10 > prev_ema10 and ema20 > prev_ema20):
             return False
     else:
-        if not (sma5 < prev_sma5 and sma10 < prev_sma10 and sma20 < prev_sma20):
+        if not (ema5 < prev_ema5 and ema10 < prev_ema10 and ema20 < prev_ema20):
             return False
 
     # ── Weekly check ──
@@ -76,42 +76,42 @@ def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
         if len(weekly) < 22:
             return False
 
-        # Compute weekly SMAs
-        weekly["SMA_5w"] = weekly["Close"].rolling(5).mean()
-        weekly["SMA_10w"] = weekly["Close"].rolling(10).mean()
-        weekly["SMA_20w"] = weekly["Close"].rolling(20).mean()
+        # Compute weekly EMAs
+        weekly["EMA_5w"] = weekly["Close"].ewm(span=5, adjust=False).mean()
+        weekly["EMA_10w"] = weekly["Close"].ewm(span=10, adjust=False).mean()
+        weekly["EMA_20w"] = weekly["Close"].ewm(span=20, adjust=False).mean()
 
         wlast = weekly.iloc[-1]
         wprev = weekly.iloc[-2]
 
-        wsma5 = wlast.get("SMA_5w")
-        wsma10 = wlast.get("SMA_10w")
-        wsma20 = wlast.get("SMA_20w")
+        wema5 = wlast.get("EMA_5w")
+        wema10 = wlast.get("EMA_10w")
+        wema20 = wlast.get("EMA_20w")
         wclose = wlast["Close"]
 
-        if any(v is None or pd.isna(v) for v in [wsma5, wsma10, wsma20]):
+        if any(v is None or pd.isna(v) for v in [wema5, wema10, wema20]):
             return False
 
         # Weekly arrangement
         if direction == "bullish":
-            if not (wclose > wsma5 > wsma10 > wsma20):
+            if not (wclose > wema5 > wema10 > wema20):
                 return False
         else:
-            if not (wclose < wsma5 < wsma10 < wsma20):
+            if not (wclose < wema5 < wema10 < wema20):
                 return False
 
         # Weekly slope
-        prev_wsma5 = wprev.get("SMA_5w")
-        prev_wsma10 = wprev.get("SMA_10w")
-        prev_wsma20 = wprev.get("SMA_20w")
-        if any(v is None or pd.isna(v) for v in [prev_wsma5, prev_wsma10, prev_wsma20]):
+        prev_wema5 = wprev.get("EMA_5w")
+        prev_wema10 = wprev.get("EMA_10w")
+        prev_wema20 = wprev.get("EMA_20w")
+        if any(v is None or pd.isna(v) for v in [prev_wema5, prev_wema10, prev_wema20]):
             return False
 
         if direction == "bullish":
-            if not (wsma5 > prev_wsma5 and wsma10 > prev_wsma10 and wsma20 > prev_wsma20):
+            if not (wema5 > prev_wema5 and wema10 > prev_wema10 and wema20 > prev_wema20):
                 return False
         else:
-            if not (wsma5 < prev_wsma5 and wsma10 < prev_wsma10 and wsma20 < prev_wsma20):
+            if not (wema5 < prev_wema5 and wema10 < prev_wema10 and wema20 < prev_wema20):
                 return False
 
     except Exception:

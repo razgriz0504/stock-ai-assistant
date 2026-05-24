@@ -49,6 +49,8 @@ def _compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     for length in [5, 10, 20, 60, 120]:
         df.ta.sma(length=length, append=True)
+    df.ta.ema(length=5, append=True)
+    df.ta.ema(length=10, append=True)
     df.ta.ema(length=12, append=True)
     df.ta.ema(length=20, append=True)
     df.ta.ema(length=26, append=True)
