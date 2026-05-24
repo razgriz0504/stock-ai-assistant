@@ -130,7 +130,7 @@ def filter_rsi_zone(df: pd.DataFrame, info: dict, params: dict) -> bool:
 
 def filter_bb_squeeze(df: pd.DataFrame, info: dict, params: dict) -> bool:
     """Bollinger Band filter.
-    params: {"mode": "squeeze" | "breakout", "width_threshold": 0.05}
+    params: {"mode": "squeeze" | "breakout", "width_threshold": 0.15}
     squeeze: BB width < threshold (low volatility, potential breakout)
     breakout: price > upper band
     """
@@ -156,7 +156,7 @@ def filter_bb_squeeze(df: pd.DataFrame, info: dict, params: dict) -> bool:
     if mode == "breakout":
         return close > upper if upper and not pd.isna(upper) else False
     else:  # squeeze
-        threshold = params.get("width_threshold", 0.05)
+        threshold = params.get("width_threshold", 0.15)
         if middle and middle > 0 and not pd.isna(middle):
             width = (upper - lower) / middle
             return width < threshold

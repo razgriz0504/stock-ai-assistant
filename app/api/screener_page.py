@@ -469,7 +469,8 @@ tbody td { padding:8px; white-space:nowrap; }
         <label for="f_bb">Bollinger Band</label>
       </div>
       <div class="filter-params" id="p_bb">
-        <select id="bb_mode"><option value="breakout">Breakout ↑</option><option value="squeeze">Squeeze</option></select>
+        <select id="bb_mode"><option value="squeeze">Squeeze</option><option value="breakout">Breakout ↑</option></select>
+        <span id="bb_width_wrap">Width &lt; <input type="number" id="bb_width" value="0.15" step="0.01" min="0.01" max="0.5" style="width:55px"></span>
       </div>
 
       <div class="filter-item">
@@ -599,7 +600,7 @@ function buildFilters() {
   if (el('f_kdj').checked) filters.technical.kdj_oversold_bounce = { enabled: true, lookback: int('kdj_lookback') };
   if (el('f_vol').checked) filters.technical.volume_breakout = { enabled: true, multiplier: float('vol_multiplier') };
   if (el('f_rsi').checked) filters.technical.rsi_zone = { enabled: true, min: int('rsi_min'), max: int('rsi_max') };
-  if (el('f_bb').checked) filters.technical.bb_squeeze = { enabled: true, mode: el('bb_mode').value };
+  if (el('f_bb').checked) filters.technical.bb_squeeze = { enabled: true, mode: el('bb_mode').value, width_threshold: parseFloat(el('bb_width').value) || 0.15 };
   if (el('f_atr').checked) filters.technical.atr_filter = { enabled: true, min_pct: float('atr_min'), max_pct: float('atr_max') };
 
   // Fundamental
@@ -805,7 +806,7 @@ function applyFilterParams(name, val) {
   if (name==='kdj_oversold_bounce' && val.lookback) el('kdj_lookback').value = val.lookback;
   if (name==='volume_breakout' && val.multiplier) el('vol_multiplier').value = val.multiplier;
   if (name==='rsi_zone') { if(val.min!=null) el('rsi_min').value=val.min; if(val.max!=null) el('rsi_max').value=val.max; }
-  if (name==='bb_squeeze' && val.mode) el('bb_mode').value = val.mode;
+  if (name==='bb_squeeze' && val.mode) { el('bb_mode').value = val.mode; if (val.width_threshold) el('bb_width').value = val.width_threshold; }
   if (name==='atr_filter') { if(val.min_pct!=null) el('atr_min').value=val.min_pct; if(val.max_pct!=null) el('atr_max').value=val.max_pct; }
   if (name==='pe_range') { if(val.min!=null) el('pe_min').value=val.min; if(val.max!=null) el('pe_max').value=val.max; }
   if (name==='market_cap' && val.tier) el('cap_tier').value = val.tier;
