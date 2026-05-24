@@ -285,6 +285,11 @@ async def _execute_screener(
 
                 indicators_snapshot = _extract_indicators_snapshot(df) if not df.empty else {}
 
+                # Add name and sector to snapshot for display
+                indicators_snapshot["_name"] = info.get("short_name", "")
+                indicators_snapshot["_sector"] = info.get("sector", "")
+                indicators_snapshot["_industry"] = info.get("industry", "")
+
                 results.append(ScreenerResult(
                     run_id=run_id,
                     symbol=sym,
@@ -315,7 +320,36 @@ async def _execute_screener(
                 pct = 60 + int((idx + 1) / total * 35)
                 _update_run(run_id, progress_pct=min(pct, 95))
 
-        # Step 6: Persist results
+        # Step 6: Fetch name/sector for passed stocks if fundamentals weren't loaded
+        if not has_fundamental_filters:
+            passed_symbols = [r.symbol for r in results if r.passed]
+            if passed_symbols:
+                logger.info(f"Fetching fundamentals for {len(passed_symbols)} passed stocks...")
+                extra_fundamentals = await asyncio.to_thread(
+                    _yf_provider.get_batch_fundamentals, passed_symbols, 10
+                )
+                # Update indicators_json with name/sector
+                for r in results:
+                    if r.passed and r.symbol in extra_fundamentals:
+                        info = extra_fundamentals[r.symbol]
+                        snapshot = json.loads(r.indicators_json) if r.indicators_json else {}
+                        snapshot["_name"] = info.get("short_name", "")
+                        snapshot["_sector"] = info.get("sector", "")
+                        snapshot["_industry"] = info.get("industry", "")
+                        r.indicators_json = json.dumps(snapshot, cls=_NumpyEncoder)
+                        # Also fill in fundamental fields
+                        if not r.market_cap:
+                            r.market_cap = info.get("market_cap")
+                        if not r.pe_ratio:
+                            r.pe_ratio = info.get("pe_ratio")
+                        if not r.revenue_growth:
+                            r.revenue_growth = info.get("revenue_growth")
+                        if not r.roe:
+                            r.roe = info.get("roe")
+                        if not r.dividend_yield:
+                            r.dividend_yield = info.get("dividend_yield")
+
+        # Step 7: Persist results
         if filter_fail_counts:
             logger.info(f"Screener filter rejection breakdown: {filter_fail_counts}")
         no_data_count = sum(1 for r in results if r.filter_details_json and "_no_data" in r.filter_details_json)

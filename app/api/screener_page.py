@@ -112,8 +112,12 @@ async def get_results(run_id: int, sort_by: str = "score", order: str = "desc"):
         results = db.query(ScreenerResult).filter_by(run_id=run_id, passed=True).all()
         data = []
         for r in results:
+            indicators = json.loads(r.indicators_json) if r.indicators_json else {}
             data.append({
                 "symbol": r.symbol,
+                "name": indicators.get("_name", ""),
+                "sector": indicators.get("_sector", ""),
+                "industry": indicators.get("_industry", ""),
                 "score": r.score,
                 "rating": r.rating,
                 "price": r.price,
@@ -124,7 +128,7 @@ async def get_results(run_id: int, sort_by: str = "score", order: str = "desc"):
                 "roe": r.roe,
                 "dividend_yield": r.dividend_yield,
                 "filter_details": json.loads(r.filter_details_json) if r.filter_details_json else {},
-                "indicators": json.loads(r.indicators_json) if r.indicators_json else {},
+                "indicators": indicators,
             })
 
         # Sort
@@ -397,22 +401,24 @@ tbody td { padding:8px; white-space:nowrap; }
 .custom-code-area { width:100%; min-height:120px; background:#111b24; border:1px solid #2a3a4a; color:#e0e0e0; font-family:'Fira Code',monospace; font-size:12px; padding:10px; border-radius:6px; resize:vertical; }
 
 .mcap-fmt { font-variant-numeric:tabular-nums; }
+.name-col { max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:#b0bec5; }
+.sector-col { font-size:12px; color:#78909c; white-space:nowrap; }
 </style>
 </head>
 <body>
 <div class="header">
   <div style="display:flex;align-items:center;gap:16px;">
     <a href="/" style="font-size:18px;">←</a>
-    <h1>Stock Screener</h1>
-    <span style="color:#607d8b;font-size:13px;">S&P 500 + Nasdaq 100</span>
+    <h1>选股器</h1>
+    <span style="color:#607d8b;font-size:13px;">标普500 + 纳斯达克100</span>
   </div>
   <div class="actions">
     <div class="preset-bar">
-      <select id="presetSelect"><option value="">-- Presets --</option></select>
-      <button class="btn-secondary" onclick="savePreset()">Save</button>
+      <select id="presetSelect"><option value="">-- 预设策略 --</option></select>
+      <button class="btn-secondary" onclick="savePreset()">保存</button>
     </div>
-    <button class="btn-secondary" onclick="toggleSchedule()">⏰ Schedule</button>
-    <button class="btn-primary" id="runBtn" onclick="runScreener()">▶ Run Screener</button>
+    <button class="btn-secondary" onclick="toggleSchedule()">⏰ 定时任务</button>
+    <button class="btn-primary" id="runBtn" onclick="runScreener()">▶ 开始选股</button>
   </div>
 </div>
 
@@ -420,7 +426,7 @@ tbody td { padding:8px; white-space:nowrap; }
   <div class="sidebar">
     <!-- Technical Filters -->
     <details class="filter-section" open>
-      <summary>Technical Filters</summary>
+      <summary>技术指标筛选</summary>
 
       <div class="filter-item">
         <input type="checkbox" id="f_ma" data-filter="ma_arrangement">
@@ -435,7 +441,7 @@ tbody td { padding:8px; white-space:nowrap; }
         <label for="f_macd">MACD Golden Cross</label>
       </div>
       <div class="filter-params" id="p_macd">
-        <span>Lookback:</span><input type="number" id="macd_lookback" value="3" min="1" max="10">
+        <span>回溯:</span><input type="number" id="macd_lookback" value="3" min="1" max="10">
       </div>
 
       <div class="filter-item">
@@ -443,7 +449,7 @@ tbody td { padding:8px; white-space:nowrap; }
         <label for="f_kdj">KDJ Oversold Bounce</label>
       </div>
       <div class="filter-params" id="p_kdj">
-        <span>Lookback:</span><input type="number" id="kdj_lookback" value="3" min="1" max="10">
+        <span>回溯:</span><input type="number" id="kdj_lookback" value="3" min="1" max="10">
       </div>
 
       <div class="filter-item">
@@ -451,7 +457,7 @@ tbody td { padding:8px; white-space:nowrap; }
         <label for="f_vol">Volume Breakout</label>
       </div>
       <div class="filter-params" id="p_vol">
-        <span>Multiplier:</span><input type="number" id="vol_multiplier" value="2.0" step="0.5" min="1">
+        <span>倍数:</span><input type="number" id="vol_multiplier" value="2.0" step="0.5" min="1">
       </div>
 
       <div class="filter-item">
@@ -470,7 +476,7 @@ tbody td { padding:8px; white-space:nowrap; }
       </div>
       <div class="filter-params" id="p_bb">
         <select id="bb_mode"><option value="squeeze">Squeeze</option><option value="breakout">Breakout ↑</option></select>
-        <span id="bb_width_wrap">Width &lt; <input type="number" id="bb_width" value="0.15" step="0.01" min="0.01" max="0.5" style="width:55px"></span>
+        <span id="bb_width_wrap">宽度 &lt; <input type="number" id="bb_width" value="0.15" step="0.01" min="0.01" max="0.5" style="width:55px"></span>
       </div>
 
       <div class="filter-item">
@@ -486,11 +492,11 @@ tbody td { padding:8px; white-space:nowrap; }
 
     <!-- Fundamental Filters -->
     <details class="filter-section" open>
-      <summary>Fundamental Filters</summary>
+      <summary>基本面筛选</summary>
 
       <div class="filter-item">
         <input type="checkbox" id="f_pe" data-filter="pe_range">
-        <label for="f_pe">PE Ratio</label>
+        <label for="f_pe">市盈率 PE</label>
       </div>
       <div class="filter-params" id="p_pe">
         <input type="number" id="pe_min" value="5" min="0" placeholder="min">
@@ -500,18 +506,18 @@ tbody td { padding:8px; white-space:nowrap; }
 
       <div class="filter-item">
         <input type="checkbox" id="f_cap" data-filter="market_cap">
-        <label for="f_cap">Market Cap</label>
+        <label for="f_cap">市值规模</label>
       </div>
       <div class="filter-params" id="p_cap">
-        <select id="cap_tier"><option value="large">Large (>200B)</option><option value="mid">Mid (10-200B)</option><option value="small">Small (<10B)</option></select>
+        <select id="cap_tier"><option value="large">大盘 (&gt;2000亿)</option><option value="mid">中盘 (100-2000亿)</option><option value="small">小盘 (&lt;100亿)</option></select>
       </div>
 
       <div class="filter-item">
         <input type="checkbox" id="f_rev" data-filter="revenue_growth">
-        <label for="f_rev">Revenue Growth</label>
+        <label for="f_rev">营收增长</label>
       </div>
       <div class="filter-params" id="p_rev">
-        <span>Min:</span><input type="number" id="rev_min" value="10" min="0" placeholder="%">%
+        <span>最低:</span><input type="number" id="rev_min" value="10" min="0" placeholder="%">%
       </div>
 
       <div class="filter-item">
@@ -519,21 +525,21 @@ tbody td { padding:8px; white-space:nowrap; }
         <label for="f_roe">ROE</label>
       </div>
       <div class="filter-params" id="p_roe">
-        <span>Min:</span><input type="number" id="roe_min" value="15" min="0" placeholder="%">%
+        <span>最低:</span><input type="number" id="roe_min" value="15" min="0" placeholder="%">%
       </div>
 
       <div class="filter-item">
         <input type="checkbox" id="f_div" data-filter="dividend_yield">
-        <label for="f_div">Dividend Yield</label>
+        <label for="f_div">股息率</label>
       </div>
       <div class="filter-params" id="p_div">
-        <span>Min:</span><input type="number" id="div_min" value="1" step="0.5" min="0" placeholder="%">%
+        <span>最低:</span><input type="number" id="div_min" value="1" step="0.5" min="0" placeholder="%">%
       </div>
     </details>
 
     <!-- Custom Code -->
     <details class="filter-section">
-      <summary>Custom Code</summary>
+      <summary>自定义代码</summary>
       <textarea class="custom-code-area" id="customCode" placeholder="def filter(data, info):&#10;    # data: DataFrame with indicators&#10;    # info: dict with fundamentals&#10;    return data['RSI_14'].iloc[-1] < 40"></textarea>
     </details>
   </div>
@@ -548,44 +554,102 @@ tbody td { padding:8px; white-space:nowrap; }
     <!-- Schedule Panel -->
     <div class="schedule-panel" id="schedulePanel">
       <div class="schedule-row">
-        <label><input type="checkbox" id="sch_enabled"> Enable scheduled scan</label>
+        <label><input type="checkbox" id="sch_enabled"> 启用定时扫描</label>
       </div>
       <div class="schedule-row">
-        <span>Frequency:</span>
-        <select id="sch_freq"><option value="daily">Daily</option><option value="weekly">Weekly</option></select>
-        <span>Days:</span>
-        <select id="sch_days"><option value="mon-fri">Mon-Fri</option><option value="mon,wed,fri">Mon/Wed/Fri</option><option value="fri">Friday</option></select>
-        <span>Time (ET):</span>
+        <span>频率:</span>
+        <select id="sch_freq"><option value="daily">每天</option><option value="weekly">每周</option></select>
+        <span>日期:</span>
+        <select id="sch_days"><option value="mon-fri">周一至周五</option><option value="mon,wed,fri">周一/三/五</option><option value="fri">周五</option></select>
+        <span>时间(ET):</span>
         <input type="number" id="sch_hour" value="16" min="0" max="23" style="width:50px">:<input type="number" id="sch_min" value="30" min="0" max="59" style="width:50px">
       </div>
       <div class="schedule-row">
-        <span>Preset:</span>
+        <span>预设:</span>
         <select id="sch_preset"></select>
-        <button class="btn-secondary" onclick="saveSchedule()">Save Schedule</button>
+        <button class="btn-secondary" onclick="saveSchedule()">保存定时任务</button>
       </div>
     </div>
 
     <!-- Results -->
     <div class="results-header">
-      <h2 id="resultsTitle">Results</h2>
+      <h2 id="resultsTitle">筛选结果</h2>
       <span id="resultsCount" style="color:#607d8b;font-size:13px;"></span>
     </div>
 
     <div id="resultsArea">
       <div class="empty-state">
-        <p>Configure filters and click <b>Run Screener</b> to scan stocks</p>
+        <p>配置筛选条件后点击 <b>开始选股</b> 扫描股票</p>
       </div>
     </div>
 
     <!-- History -->
     <div class="history-section">
-      <h3>Run History</h3>
+      <h3>运行历史</h3>
       <div id="historyList"></div>
     </div>
   </div>
 </div>
 
 <script>
+// ── Chinese name mapping (common US stocks) ──
+const CN_NAMES = {
+  "AAPL":"苹果","ABBV":"艾伯维","ABT":"雅培","ACN":"埃森哲","ADBE":"Adobe","ADI":"亚德诺",
+  "ADP":"自动数据处理","ADSK":"欧特克","AEP":"美国电力","AFL":"美国家庭人寿","AIG":"美国国际集团",
+  "AMAT":"应用材料","AMD":"超微半导体","AMGN":"安进","AMP":"美国金融集团","AMT":"美国电塔",
+  "AMZN":"亚马逊","ANET":"Arista网络","ANSS":"Ansys","AON":"怡安","APD":"空气化工",
+  "APH":"安费诺","AVGO":"博通","AXP":"美国运通","AZO":"汽车地带","BA":"波音",
+  "BAC":"美国银行","BDX":"碧迪医疗","BK":"纽约梅隆","BKNG":"Booking","BLK":"贝莱德",
+  "BMY":"百时美施贵宝","BRK-B":"伯克希尔B","BSX":"波士顿科学","C":"花旗集团",
+  "CAT":"卡特彼勒","CB":"丘博保险","CDNS":"Cadence","CL":"高露洁","CMCSA":"康卡斯特",
+  "CME":"芝商所","COP":"康菲石油","COST":"好市多","CRM":"赛富时","CSCO":"思科",
+  "CVS":"CVS健康","CVX":"雪佛龙","D":"道明尼能源","DE":"迪尔","DHR":"丹纳赫",
+  "DIS":"迪士尼","DOW":"陶氏","DUK":"杜克能源","ECL":"艺康","EL":"雅诗兰黛",
+  "EMR":"艾默生","ENPH":"昂菲能源","EOG":"EOG资源","EQIX":"Equinix","ETN":"伊顿",
+  "EW":"爱德华兹生命科学","EXC":"爱克斯龙","F":"福特","FDX":"联邦快递",
+  "FIS":"富达信息","FISV":"Fiserv","GD":"通用动力","GE":"通用电气",
+  "GEHC":"GE医疗","GILD":"吉利德","GIS":"通用磨坊","GM":"通用汽车",
+  "GOOG":"谷歌C","GOOGL":"谷歌A","GPN":"环球支付","GS":"高盛","GWW":"固安捷",
+  "HD":"家得宝","HON":"霍尼韦尔","HPQ":"惠普","HUM":"哈门那",
+  "IBM":"IBM","ICE":"洲际交易所","IDXX":"爱德士","INTC":"英特尔","INTU":"财捷",
+  "ISRG":"直觉外科","ITW":"伊利诺伊工具","JNJ":"强生","JPM":"摩根大通",
+  "KDP":"Keurig Dr Pepper","KHC":"卡夫亨氏","KMB":"金佰利","KO":"可口可乐",
+  "LIN":"林德","LLY":"礼来","LMT":"洛克希德马丁","LOW":"劳氏","LRCX":"泛林集团",
+  "MA":"万事达","MCD":"麦当劳","MCHP":"微芯科技","MCK":"麦克森","MCO":"穆迪",
+  "MDLZ":"亿滋国际","MDT":"美敦力","MET":"大都会人寿","META":"Meta",
+  "MMM":"3M","MO":"奥驰亚","MRK":"默沙东","MS":"摩根士丹利","MSCI":"明晟",
+  "MSFT":"微软","MSI":"摩托罗拉","MU":"美光科技","NEE":"NextEra能源",
+  "NFLX":"奈飞","NKE":"耐克","NOC":"诺斯罗普格鲁曼","NOW":"ServiceNow",
+  "NSC":"诺福克南方","NVDA":"英伟达","NVR":"NVR地产","ORCL":"甲骨文",
+  "ORLY":"奥莱利汽车","OXY":"西方石油","PANW":"帕洛阿尔托网络","PAYC":"Paycom",
+  "PEP":"百事","PFE":"辉瑞","PG":"宝洁","PGR":"前进保险","PH":"帕克汉尼汾",
+  "PLD":"安博","PM":"菲利普莫里斯","PNC":"PNC金融","PSA":"公共存储",
+  "PYPL":"PayPal","QCOM":"高通","REGN":"再生元","ROP":"罗珀科技",
+  "ROST":"罗斯百货","RTX":"雷神","SBUX":"星巴克","SCHW":"嘉信理财",
+  "SHW":"宣伟","SLB":"斯伦贝谢","SNPS":"新思科技","SO":"南方电力",
+  "SPG":"西蒙地产","SPGI":"标普全球","SRE":"桑普拉能源","SYK":"史赛克",
+  "T":"AT&T","TGT":"塔吉特","TMO":"赛默飞","TMUS":"T-Mobile",
+  "TRV":"旅行者集团","TSLA":"特斯拉","TSN":"泰森食品","TXN":"德州仪器",
+  "UNH":"联合健康","UNP":"联合太平洋","UPS":"联合包裹","URI":"联合租赁",
+  "USB":"美国合众银行","V":"Visa","VFC":"威富集团","VRTX":"福泰制药",
+  "VZ":"威瑞森","WBA":"沃尔格林","WFC":"富国银行","WM":"废物管理",
+  "WMB":"威廉姆斯","WMT":"沃尔玛","XOM":"埃克森美孚","ZTS":"硕腾",
+  "ABNB":"爱彼迎","ARM":"ARM","ASML":"阿斯麦","CRWD":"CrowdStrike",
+  "DASH":"DoorDash","DDOG":"Datadog","FTNT":"飞塔网络","KLAC":"科磊",
+  "LULU":"露露柠檬","MAR":"万豪","MELI":"MercadoLibre","MNST":"怪兽饮料",
+  "MRNA":"Moderna","MRVL":"Marvell","NXPI":"恩智浦","ODFL":"Old Dominion",
+  "ON":"安森美","PDD":"拼多多","SMCI":"超微电脑","TEAM":"Atlassian",
+  "TSLA":"特斯拉","TTD":"Trade Desk","TTWO":"Take-Two","WDAY":"Workday",
+  "CEG":"星座能源","LHX":"L3哈里斯","CDNS":"铿腾电子","CPRT":"Copart",
+};
+
+const SECTOR_CN = {
+  "Technology":"科技","Healthcare":"医疗健康","Financial Services":"金融",
+  "Consumer Cyclical":"可选消费","Communication Services":"通信服务",
+  "Industrials":"工业","Consumer Defensive":"必需消费","Energy":"能源",
+  "Utilities":"公用事业","Real Estate":"房地产","Basic Materials":"基础材料",
+};
+
 let currentRunId = null;
 let pollTimer = null;
 let currentResults = [];
@@ -620,7 +684,7 @@ async function runScreener() {
   const presetId = el('presetSelect').value || null;
 
   el('runBtn').disabled = true;
-  el('runBtn').textContent = '⏳ Running...';
+  el('runBtn').textContent = '⏳ 运行中...';
   showProgress(0);
 
   try {
@@ -673,38 +737,40 @@ async function loadResults(runId) {
   const data = await resp.json();
   currentResults = data.results;
   renderTable(currentResults);
-  el('resultsCount').textContent = `${data.total_passed} stocks passed`;
+  el('resultsCount').textContent = `${data.total_passed} 只通过`;
 }
 
 function renderTable(results) {
   if (!results.length) {
-    el('resultsArea').innerHTML = '<div class="empty-state"><p>No stocks passed the filters</p></div>';
+    el('resultsArea').innerHTML = '<div class="empty-state"><p>没有股票通过筛选条件</p></div>';
     return;
   }
 
   let html = `<table><thead><tr>
-    <th onclick="sortBy('symbol')">Symbol</th>
-    <th onclick="sortBy('price')">Price</th>
-    <th onclick="sortBy('change_pct')">Chg%</th>
-    <th onclick="sortBy('score')">Score</th>
+    <th onclick="sortBy('symbol')">代码</th>
+    <th onclick="sortBy('name')">名称</th>
+    <th onclick="sortBy('sector')">板块</th>
+    <th onclick="sortBy('price')">价格</th>
+    <th onclick="sortBy('change_pct')">涨跌%</th>
+    <th onclick="sortBy('score')">评分</th>
     <th onclick="sortBy('pe_ratio')">PE</th>
-    <th onclick="sortBy('market_cap')">MCap</th>
-    <th onclick="sortBy('revenue_growth')">Rev%</th>
-    <th onclick="sortBy('roe')">ROE%</th>
+    <th onclick="sortBy('market_cap')">市值</th>
   </tr></thead><tbody>`;
 
   for (const r of results) {
     const chgCls = (r.change_pct||0) >= 0 ? 'positive' : 'negative';
     const ratingCls = r.rating ? `rating-${r.rating}` : '';
+    const cnName = CN_NAMES[r.symbol] || r.name || '';
+    const sector = SECTOR_CN[r.sector] || r.sector || '';
     html += `<tr onclick="toggleChart(this,'${r.symbol}')">
       <td><b>${r.symbol}</b></td>
+      <td class="name-col" title="${r.name||''}">${cnName}</td>
+      <td class="sector-col">${sector}</td>
       <td>${r.price ? r.price.toFixed(2) : '-'}</td>
       <td class="${chgCls}">${r.change_pct != null ? (r.change_pct >= 0 ? '+' : '') + r.change_pct.toFixed(2) + '%' : '-'}</td>
       <td>${r.score ? r.score.toFixed(1) : '-'} <span class="rating-badge ${ratingCls}">${r.rating||''}</span></td>
       <td>${r.pe_ratio != null ? r.pe_ratio.toFixed(1) : '-'}</td>
       <td class="mcap-fmt">${fmtCap(r.market_cap)}</td>
-      <td>${r.revenue_growth != null ? r.revenue_growth.toFixed(1)+'%' : '-'}</td>
-      <td>${r.roe != null ? r.roe.toFixed(1)+'%' : '-'}</td>
     </tr>`;
   }
   html += '</tbody></table>';
@@ -717,7 +783,7 @@ function sortBy(col) {
   else { sortCol = col; sortDir = 'desc'; }
   currentResults.sort((a, b) => {
     let va = a[col], vb = b[col];
-    if (col === 'symbol') { va = va||''; vb = vb||''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
+    if (col === 'symbol' || col === 'name' || col === 'sector') { va = va||''; vb = vb||''; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va); }
     va = va||0; vb = vb||0;
     return sortDir === 'asc' ? va - vb : vb - va;
   });
@@ -752,12 +818,13 @@ async function toggleChart(row, symbol) {
 async function loadHistory() {
   const resp = await fetch('/api/screener/runs');
   const runs = await resp.json();
-  if (!runs.length) { el('historyList').innerHTML = '<p style="color:#607d8b;font-size:12px;">No runs yet</p>'; return; }
+  if (!runs.length) { el('historyList').innerHTML = '<p style="color:#607d8b;font-size:12px;">暂无记录</p>'; return; }
   el('historyList').innerHTML = runs.map(r => {
     const dt = r.started_at ? new Date(r.started_at).toLocaleString() : '';
+    const trigger = r.trigger === 'manual' ? '手动' : '定时';
     return `<div class="history-item" onclick="loadResults(${r.id})">
-      <span>v${r.version} - ${dt} (${r.trigger})</span>
-      <span>${r.passed_stocks}/${r.total_stocks} passed</span>
+      <span>v${r.version} - ${dt} (${trigger})</span>
+      <span>${r.passed_stocks}/${r.total_stocks} 通过</span>
     </div>`;
   }).join('');
 }
@@ -767,7 +834,7 @@ async function loadPresets() {
   const resp = await fetch('/api/screener/presets');
   const presets = await resp.json();
   const sel = el('presetSelect');
-  sel.innerHTML = '<option value="">-- Presets --</option>';
+  sel.innerHTML = '<option value="">-- 预设策略 --</option>';
   const schSel = el('sch_preset');
   schSel.innerHTML = '<option value="">None</option>';
   for (const p of presets) {
@@ -870,7 +937,7 @@ function showProgress(pct) {
   el('progressText').textContent = pct + '%';
 }
 function hideProgress() { el('progressBar').classList.remove('active'); }
-function resetRunBtn() { el('runBtn').disabled = false; el('runBtn').textContent = '▶ Run Screener'; }
+function resetRunBtn() { el('runBtn').disabled = false; el('runBtn').textContent = '▶ 开始选股'; }
 
 function fmtCap(v) {
   if (!v) return '-';

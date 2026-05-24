@@ -173,6 +173,9 @@ class YFinanceProvider(DataProvider):
             ticker = yf.Ticker(symbol)
             info = ticker.info
             info_data = {
+                "short_name": info.get("shortName", ""),
+                "sector": info.get("sector", ""),
+                "industry": info.get("industry", ""),
                 "market_cap": info.get("marketCap"),
                 "pe_ratio": info.get("trailingPE"),
                 "forward_pe": info.get("forwardPE"),
@@ -183,8 +186,6 @@ class YFinanceProvider(DataProvider):
                 "dividend_yield": _to_pct(info.get("dividendYield")),
                 "fifty_two_week_high": info.get("fiftyTwoWeekHigh"),
                 "fifty_two_week_low": info.get("fiftyTwoWeekLow"),
-                "sector": info.get("sector", ""),
-                "industry": info.get("industry", ""),
             }
         except Exception as e:
             logger.debug(f"Fundamental fetch failed for {symbol}: {e}")
