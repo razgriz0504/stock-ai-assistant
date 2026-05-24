@@ -59,6 +59,7 @@ class YFinanceProvider(DataProvider):
         """Batch download historical data for multiple symbols.
 
         Uses yf.download for efficient batch fetching. Returns dict of {symbol: DataFrame}.
+        Handles different yfinance versions' MultiIndex column formats.
         """
         if not symbols:
             return {}
@@ -77,31 +78,87 @@ class YFinanceProvider(DataProvider):
                     progress=False,
                 )
                 if data.empty:
+                    logger.warning(f"Batch download returned empty for chunk {i}-{i+len(batch)}")
                     continue
 
                 if len(batch) == 1:
                     sym = batch[0]
-                    if not data.empty:
-                        df = data.copy()
+                    df = data.copy()
+                    # Flatten MultiIndex columns if present
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = [c[1] if isinstance(c, tuple) and len(c) > 1 else (c[0] if isinstance(c, tuple) else c) for c in df.columns]
+                    else:
                         df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
-                        result[sym] = df
-                else:
-                    for sym in batch:
-                        try:
-                            if sym in data.columns.get_level_values(0):
-                                df = data[sym].dropna(how="all")
-                                if not df.empty:
-                                    result[sym] = df
-                        except (KeyError, TypeError):
-                            continue
-            except Exception as e:
-                logger.warning(f"Batch download failed for chunk {i}-{i+len(batch)}: {e}")
-                for sym in batch:
-                    df = self.get_history(sym, period)
                     if not df.empty:
                         result[sym] = df
+                else:
+                    # Detect column structure: newer yfinance may use different MultiIndex levels
+                    extracted = self._extract_tickers_from_multiindex(data, batch)
+                    result.update(extracted)
+            except Exception as e:
+                logger.warning(f"Batch download failed for chunk {i}-{i+len(batch)}: {e}")
+                # Fallback to individual downloads
+                for sym in batch:
+                    try:
+                        df = self.get_history(sym, period)
+                        if not df.empty:
+                            result[sym] = df
+                    except Exception:
+                        continue
 
-        logger.info(f"Batch history: requested {len(symbols)}, got {len(result)}")
+        logger.info(f"Batch history: requested {len(symbols)}, got {len(result)} successfully")
+        return result
+
+    def _extract_tickers_from_multiindex(self, data: pd.DataFrame, batch: list[str]) -> dict[str, pd.DataFrame]:
+        """Extract per-ticker DataFrames from yf.download() result, handling different column formats."""
+        result: dict[str, pd.DataFrame] = {}
+
+        if not isinstance(data.columns, pd.MultiIndex):
+            # Flat columns - might be single ticker result
+            logger.warning(f"Unexpected flat columns in multi-ticker download: {list(data.columns[:5])}")
+            return result
+
+        # Check which level contains ticker symbols
+        level0_values = set(data.columns.get_level_values(0).unique())
+        level1_values = set(data.columns.get_level_values(1).unique())
+
+        # Determine which level has tickers by checking overlap with our batch
+        batch_set = set(batch)
+        level0_overlap = len(level0_values & batch_set)
+        level1_overlap = len(level1_values & batch_set)
+
+        if level0_overlap >= level1_overlap and level0_overlap > 0:
+            # Level 0 has tickers (group_by="ticker" format)
+            ticker_level = 0
+        elif level1_overlap > 0:
+            # Level 1 has tickers (default yfinance format: Price/Ticker)
+            ticker_level = 1
+        else:
+            logger.warning(f"Cannot identify ticker level. Level0 sample: {list(level0_values)[:5]}, Level1 sample: {list(level1_values)[:5]}")
+            return result
+
+        logger.debug(f"Using level {ticker_level} for ticker extraction (level0_overlap={level0_overlap}, level1_overlap={level1_overlap})")
+
+        for sym in batch:
+            try:
+                if ticker_level == 0:
+                    if sym in level0_values:
+                        df = data[sym].dropna(how="all")
+                        if not df.empty:
+                            # Flatten remaining level if needed
+                            if isinstance(df.columns, pd.MultiIndex):
+                                df.columns = df.columns.get_level_values(0)
+                            result[sym] = df
+                else:
+                    # Ticker is at level 1 - need to select across level 1
+                    if sym in level1_values:
+                        df = data.xs(sym, level=1, axis=1).dropna(how="all")
+                        if not df.empty:
+                            result[sym] = df
+            except (KeyError, TypeError, ValueError) as e:
+                logger.debug(f"Failed to extract {sym}: {e}")
+                continue
+
         return result
 
     def get_fundamental_info(self, symbol: str) -> dict:

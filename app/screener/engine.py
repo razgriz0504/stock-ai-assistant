@@ -121,8 +121,46 @@ async def _execute_screener(
         symbols = await asyncio.to_thread(get_universe)
         _update_run(run_id, total_stocks=len(symbols), progress_pct=5)
 
-        # Step 2: Fetch fundamental data (parallel, cached)
+        # Step 2: Check if ANY filters are enabled
         has_fundamental_filters = _has_enabled_filters(filters_config, "fundamental")
+        has_technical_filters = _has_enabled_filters(filters_config, "technical")
+        has_custom_code = bool(custom_code and custom_code.strip())
+
+        logger.info(f"Screener config: fundamental={has_fundamental_filters}, technical={has_technical_filters}, custom={has_custom_code}")
+
+        # Fast path: no filters at all → all stocks pass
+        if not has_fundamental_filters and not has_technical_filters and not has_custom_code:
+            logger.info("No filters enabled - all stocks pass by default")
+            results = []
+            for sym in symbols:
+                results.append(ScreenerResult(
+                    run_id=run_id,
+                    symbol=sym,
+                    passed=True,
+                    score=None,
+                    rating="",
+                    price=None,
+                    change_pct=None,
+                    filter_details_json="{}",
+                    indicators_json="{}",
+                ))
+            db = SessionLocal()
+            try:
+                db.bulk_save_objects(results)
+                run_record = db.query(ScreenerRun).filter_by(id=run_id).first()
+                if run_record:
+                    run_record.status = "completed"
+                    run_record.passed_stocks = len(symbols)
+                    run_record.total_stocks = len(symbols)
+                    run_record.progress_pct = 100
+                    run_record.completed_at = datetime.now(timezone.utc)
+                db.commit()
+            finally:
+                db.close()
+            logger.info(f"Screener run #{version} completed (no filters): {len(symbols)}/{len(symbols)} passed")
+            return run_id
+
+        # Step 3: Fetch fundamental data (parallel, cached)
         fundamentals: dict[str, dict] = {}
 
         if has_fundamental_filters:
@@ -131,7 +169,7 @@ async def _execute_screener(
             )
             _update_run(run_id, progress_pct=20)
 
-            # Step 3: Apply fundamental filters first (reduces working set)
+            # Apply fundamental filters first (reduces working set)
             passed_fundamental = []
             for sym in symbols:
                 info = fundamentals.get(sym, {})
@@ -146,14 +184,14 @@ async def _execute_screener(
         logger.info(f"Screener: {len(symbols_to_scan)} stocks passed fundamental filters (from {len(symbols)} total)")
 
         # Step 4: Batch download OHLCV for remaining stocks
-        has_technical_filters = _has_enabled_filters(filters_config, "technical")
-        need_ohlcv = has_technical_filters or custom_code
+        need_ohlcv = has_technical_filters or has_custom_code
 
         history_data: dict[str, pd.DataFrame] = {}
         if need_ohlcv and symbols_to_scan:
             history_data = await asyncio.to_thread(
                 _yf_provider.get_batch_history, symbols_to_scan, "1y"
             )
+            logger.info(f"Screener: got OHLCV data for {len(history_data)}/{len(symbols_to_scan)} stocks")
         _update_run(run_id, progress_pct=60)
 
         # Step 5: Compute indicators + apply technical filters + score
@@ -239,7 +277,7 @@ async def _execute_screener(
                     indicators_json=json.dumps(indicators_snapshot),
                 ))
             except Exception as e:
-                logger.debug(f"Screener error for {sym}: {e}")
+                logger.warning(f"Screener error for {sym}: {e}")
                 results.append(ScreenerResult(
                     run_id=run_id,
                     symbol=sym,
@@ -253,6 +291,11 @@ async def _execute_screener(
                 _update_run(run_id, progress_pct=min(pct, 95))
 
         # Step 6: Persist results
+        no_data_count = sum(1 for r in results if r.filter_details_json and "_no_data" in r.filter_details_json)
+        error_count = sum(1 for r in results if r.filter_details_json and "_error" in r.filter_details_json)
+        if no_data_count > 0 or error_count > 0:
+            logger.warning(f"Screener issues: {no_data_count} stocks had no OHLCV data, {error_count} had errors")
+
         db = SessionLocal()
         try:
             db.bulk_save_objects(results)
