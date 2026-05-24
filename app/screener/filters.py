@@ -264,6 +264,77 @@ def filter_atr_filter(df: pd.DataFrame, info: dict, params: dict) -> bool:
     return min_pct <= atr_pct <= max_pct
 
 
+def filter_trend_initiation(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """Trend initiation filter: detects stocks just starting an uptrend.
+
+    Conditions (all must be met):
+    1. EMA_5 crossed above EMA_20 within last N days (was below before)
+    2. Volume above 1.5x average (confirms breakout)
+    3. MACD histogram turned positive (momentum shift)
+    4. Price above EMA_20 (confirmed above key MA)
+
+    params: {"lookback": 5, "vol_multiplier": 1.5}
+    """
+    lookback = params.get("lookback", 5)
+    vol_mult = params.get("vol_multiplier", 1.5)
+
+    if len(df) < lookback + 5:
+        return False
+
+    # Check required columns exist
+    required = ["EMA_5", "EMA_20", "Volume_Ratio", "MACDh_12_26_9"]
+    for col in required:
+        if col not in df.columns:
+            return False
+
+    last = df.iloc[-1]
+    close = last["Close"]
+    ema20 = last.get("EMA_20")
+
+    if ema20 is None or pd.isna(ema20):
+        return False
+
+    # Condition 4: Price must be above EMA_20
+    if close <= ema20:
+        return False
+
+    # Condition 1: EMA_5 crossed above EMA_20 within lookback days
+    # Check that EMA_5 was below EMA_20 before the crossover
+    recent = df.iloc[-(lookback + 2):]
+    ema5_series = recent["EMA_5"]
+    ema20_series = recent["EMA_20"]
+
+    if ema5_series.isna().any() or ema20_series.isna().any():
+        return False
+
+    cross_found = False
+    for i in range(1, len(recent)):
+        prev_above = ema5_series.iloc[i - 1] > ema20_series.iloc[i - 1]
+        curr_above = ema5_series.iloc[i] > ema20_series.iloc[i]
+        if not prev_above and curr_above:
+            cross_found = True
+            break
+
+    if not cross_found:
+        return False
+
+    # Condition 2: Volume confirmation - at least one day in lookback has elevated volume
+    vol_ratio = df["Volume_Ratio"].iloc[-lookback:]
+    if vol_ratio.isna().all():
+        return False
+    if vol_ratio.max() < vol_mult:
+        return False
+
+    # Condition 3: MACD histogram positive (momentum turning up)
+    macdh = last.get("MACDh_12_26_9")
+    if macdh is None or pd.isna(macdh):
+        return False
+    if macdh <= 0:
+        return False
+
+    return True
+
+
 # ═══════════════════════════════════════════════════════════════
 # Fundamental Filters
 # ═══════════════════════════════════════════════════════════════
@@ -340,6 +411,7 @@ def filter_dividend_yield(df: pd.DataFrame, info: dict, params: dict) -> bool:
 
 TECHNICAL_FILTERS = {
     "ma_arrangement": filter_ma_arrangement,
+    "trend_initiation": filter_trend_initiation,
     "macd_golden_cross": filter_macd_golden_cross,
     "kdj_oversold_bounce": filter_kdj_oversold_bounce,
     "volume_breakout": filter_volume_breakout,

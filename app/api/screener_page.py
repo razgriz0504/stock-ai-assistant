@@ -403,6 +403,7 @@ tbody td { padding:8px; white-space:nowrap; }
 .mcap-fmt { font-variant-numeric:tabular-nums; }
 .name-col { max-width:100px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:#b0bec5; }
 .sector-col { font-size:12px; color:#78909c; white-space:nowrap; }
+.filter-category { font-size:11px; color:#4fc3f7; font-weight:600; padding:6px 0 2px 0; border-top:1px solid #1e3040; margin-top:4px; }
 </style>
 </head>
 <body>
@@ -428,14 +429,26 @@ tbody td { padding:8px; white-space:nowrap; }
     <details class="filter-section" open>
       <summary>技术指标筛选</summary>
 
+      <div class="filter-category">📈 趋势延续（已确立上升趋势）</div>
       <div class="filter-item">
         <input type="checkbox" id="f_ma" data-filter="ma_arrangement">
-        <label for="f_ma">MA Arrangement</label>
+        <label for="f_ma">EMA Arrangement</label>
       </div>
       <div class="filter-params" id="p_ma">
         <select id="ma_direction"><option value="bullish">Bullish ↑</option><option value="bearish">Bearish ↓</option></select>
       </div>
 
+      <div class="filter-category" style="margin-top:12px;">🚀 趋势启动（刚开始上涨）</div>
+      <div class="filter-item">
+        <input type="checkbox" id="f_trend_init" data-filter="trend_initiation">
+        <label for="f_trend_init">Trend Initiation</label>
+      </div>
+      <div class="filter-params" id="p_trend_init">
+        <span>回溯:</span><input type="number" id="trend_lookback" value="5" min="2" max="15" style="width:45px">
+        <span>量比:</span><input type="number" id="trend_vol" value="1.5" step="0.1" min="1" style="width:50px">
+      </div>
+
+      <div class="filter-category" style="margin-top:12px;">🔧 辅助指标</div>
       <div class="filter-item">
         <input type="checkbox" id="f_macd" data-filter="macd_golden_cross">
         <label for="f_macd">MACD Golden Cross</label>
@@ -660,6 +673,7 @@ function buildFilters() {
 
   // Technical
   if (el('f_ma').checked) filters.technical.ma_arrangement = { enabled: true, direction: el('ma_direction').value };
+  if (el('f_trend_init').checked) filters.technical.trend_initiation = { enabled: true, lookback: int('trend_lookback'), vol_multiplier: parseFloat(el('trend_vol').value) || 1.5 };
   if (el('f_macd').checked) filters.technical.macd_golden_cross = { enabled: true, lookback: int('macd_lookback') };
   if (el('f_kdj').checked) filters.technical.kdj_oversold_bounce = { enabled: true, lookback: int('kdj_lookback') };
   if (el('f_vol').checked) filters.technical.volume_breakout = { enabled: true, multiplier: float('vol_multiplier') };
