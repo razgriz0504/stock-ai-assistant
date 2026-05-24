@@ -68,7 +68,19 @@ def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
 
     # ── Weekly check ──
     try:
-        weekly = df.resample("W").agg({
+        # Ensure DatetimeIndex for resample
+        if not isinstance(df.index, pd.DatetimeIndex):
+            df_w = df.copy()
+            df_w.index = pd.to_datetime(df_w.index)
+        else:
+            df_w = df
+
+        # Remove timezone info if present (avoids resample issues)
+        if df_w.index.tz is not None:
+            df_w = df_w.copy()
+            df_w.index = df_w.index.tz_localize(None)
+
+        weekly = df_w.resample("W").agg({
             "Open": "first", "High": "max", "Low": "min",
             "Close": "last", "Volume": "sum"
         }).dropna()
@@ -89,7 +101,7 @@ def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
         wema20 = wlast.get("EMA_20w")
         wclose = wlast["Close"]
 
-        if any(v is None or pd.isna(v) for v in [wema5, wema10, wema20]):
+        if any(v is None or pd.isna(v) for v in [wema5, wema10, wema20, wclose]):
             return False
 
         # Weekly arrangement
@@ -114,7 +126,8 @@ def filter_ma_arrangement(df: pd.DataFrame, info: dict, params: dict) -> bool:
             if not (wema5 < prev_wema5 and wema10 < prev_wema10 and wema20 < prev_wema20):
                 return False
 
-    except Exception:
+    except Exception as e:
+        logger.debug(f"MA weekly check error: {e}")
         return False
 
     return True
