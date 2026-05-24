@@ -14,7 +14,8 @@ from app.api.backtest_page import router as backtest_router
 from app.api.watchlist_page import router as watchlist_router
 from app.api.scoring_page import router as scoring_router
 from app.api.report_admin_page import router as report_admin_router
-from app.monitor.scheduler import start_scheduler, stop_scheduler, restore_report_schedule
+from app.api.screener_page import router as screener_router
+from app.monitor.scheduler import start_scheduler, stop_scheduler, restore_report_schedule, restore_screener_schedule
 
 # 配置日志
 logging.basicConfig(
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
     start_scheduler()
     restore_report_schedule()
+    restore_screener_schedule()
     logger.info("Scheduler started")
     logger.info(f"Default LLM: {settings.default_llm}")
 
@@ -58,6 +60,7 @@ app.include_router(backtest_router)
 app.include_router(watchlist_router)
 app.include_router(scoring_router)
 app.include_router(report_admin_router)
+app.include_router(screener_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -73,7 +76,7 @@ async def root():
 body { background: #0f1923; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
 h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
 .subtitle { color: #78909c; font-size: 14px; margin-bottom: 40px; }
-.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; max-width: 640px; width: 100%; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 900px; width: 100%; }
 .card {
     background: #1a2634; border: 1px solid #2a3a4a; border-radius: 12px;
     padding: 24px; text-decoration: none; color: inherit;
@@ -111,6 +114,11 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-icon">&#x2b50;</div>
         <div class="card-title">Watchlist</div>
         <div class="card-desc">Manage your stock watchlist for scoring</div>
+    </a>
+    <a class="card" href="/screener">
+        <div class="card-icon">&#x1f50d;</div>
+        <div class="card-title">Stock Screener</div>
+        <div class="card-desc">Scan S&P 500 + Nasdaq 100 with technical & fundamental filters</div>
     </a>
     <a class="card" href="/settings">
         <div class="card-icon">&#x2699;</div>

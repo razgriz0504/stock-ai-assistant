@@ -142,6 +142,77 @@ class ReportConfig(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
+# ═══════════════════════════════════════════════════════════════
+# Screener 选股器相关表
+# ═══════════════════════════════════════════════════════════════
+
+class ScreenerPreset(Base):
+    """选股器预设条件"""
+    __tablename__ = "screener_presets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    filters_json = Column(Text, default="{}")       # JSON: 完整筛选条件配置
+    custom_code = Column(Text, default="")           # 用户自定义 Python 筛选代码
+    is_default = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ScreenerRun(Base):
+    """选股器执行记录"""
+    __tablename__ = "screener_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False)
+    preset_id = Column(Integer, nullable=True)       # 使用的预设 ID
+    filters_json = Column(Text, default="{}")        # 本次使用的筛选条件快照
+    custom_code = Column(Text, default="")           # 本次使用的自定义代码快照
+    trigger = Column(String(20), default="manual")   # "manual" / "scheduled"
+    status = Column(String(20), default="running")   # "running" / "completed" / "failed"
+    total_stocks = Column(Integer, default=0)        # 扫描股票总数
+    passed_stocks = Column(Integer, default=0)       # 通过筛选的股票数
+    progress_pct = Column(Integer, default=0)        # 进度 0-100
+    error_message = Column(Text, default="")
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = Column(DateTime, nullable=True)
+
+
+class ScreenerResult(Base):
+    """选股器单只股票结果"""
+    __tablename__ = "screener_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, nullable=False, index=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    passed = Column(Boolean, default=False)
+    score = Column(Float, nullable=True)              # 技术评分 1-5
+    rating = Column(String(5), default="")            # AA/A/B/C/D
+    price = Column(Float, nullable=True)
+    change_pct = Column(Float, nullable=True)
+    market_cap = Column(Float, nullable=True)
+    pe_ratio = Column(Float, nullable=True)
+    revenue_growth = Column(Float, nullable=True)
+    roe = Column(Float, nullable=True)
+    dividend_yield = Column(Float, nullable=True)
+    filter_details_json = Column(Text, default="{}")  # 各筛选条件通过/失败详情
+    indicators_json = Column(Text, default="{}")      # 关键指标值快照
+
+
+class ScreenerConfig(Base):
+    """选股器定时配置（单例表，id=1）"""
+    __tablename__ = "screener_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    schedule_enabled = Column(Boolean, default=False)
+    schedule_frequency = Column(String(20), default="daily")  # daily / weekly
+    schedule_day_of_week = Column(String(10), default="mon-fri")
+    schedule_hour = Column(Integer, default=16)                # ET 16:30 收盘后
+    schedule_minute = Column(Integer, default=30)
+    schedule_preset_id = Column(Integer, nullable=True)        # 定时运行的预设 ID
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 def init_db():
     """初始化数据库，创建所有表 + 自动迁移缺失列"""
     Base.metadata.create_all(bind=engine)

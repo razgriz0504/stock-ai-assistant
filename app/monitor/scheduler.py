@@ -226,3 +226,94 @@ def restore_report_schedule():
         logger.error(f"Failed to restore report schedule: {e}")
     finally:
         db.close()
+
+
+# ─── 选股器定时任务 ───
+
+def add_screener_job(day_of_week: str = "mon-fri", hour: int = 16, minute: int = 30):
+    """添加/更新选股器定时任务"""
+    scheduler.add_job(
+        _run_screener_job,
+        CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute, timezone=ET),
+        id="screener_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"Screener job scheduled at {day_of_week} {hour:02d}:{minute:02d} ET")
+
+
+def remove_screener_job():
+    """移除选股器定时任务"""
+    try:
+        scheduler.remove_job("screener_scheduled")
+        logger.info("Screener job removed")
+    except Exception:
+        pass
+
+
+def update_screener_schedule(config):
+    """根据 ScreenerConfig 更新定时任务"""
+    if config.schedule_enabled:
+        add_screener_job(
+            day_of_week=config.schedule_day_of_week,
+            hour=config.schedule_hour,
+            minute=config.schedule_minute,
+        )
+    else:
+        remove_screener_job()
+
+
+async def _run_screener_job():
+    """定时选股任务：从 DB 读取预设条件执行"""
+    import json
+    from db.models import SessionLocal, ScreenerConfig, ScreenerPreset
+    from app.screener.engine import run_screener
+
+    logger.info("Scheduled screener job triggered")
+    db = SessionLocal()
+    try:
+        cfg = db.query(ScreenerConfig).filter_by(id=1).first()
+        if not cfg or not cfg.schedule_preset_id:
+            logger.warning("No screener preset configured for scheduled run")
+            return
+
+        preset = db.query(ScreenerPreset).filter_by(id=cfg.schedule_preset_id).first()
+        if not preset:
+            logger.warning(f"Screener preset {cfg.schedule_preset_id} not found")
+            return
+
+        filters = json.loads(preset.filters_json) if preset.filters_json else {}
+        custom_code = preset.custom_code or ""
+
+        await run_screener(
+            filters_config=filters,
+            custom_code=custom_code,
+            trigger="scheduled",
+            preset_id=preset.id,
+        )
+        logger.info("Scheduled screener completed")
+    except Exception as e:
+        logger.error(f"Scheduled screener job error: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+def restore_screener_schedule():
+    """启动时从 DB 恢复选股器定时任务配置"""
+    from db.models import SessionLocal, ScreenerConfig
+
+    db = SessionLocal()
+    try:
+        cfg = db.query(ScreenerConfig).filter_by(id=1).first()
+        if cfg and cfg.schedule_enabled:
+            add_screener_job(
+                day_of_week=cfg.schedule_day_of_week,
+                hour=cfg.schedule_hour,
+                minute=cfg.schedule_minute,
+            )
+            logger.info("Screener schedule restored from DB config")
+        else:
+            logger.info("Screener schedule is disabled or not configured")
+    except Exception as e:
+        logger.error(f"Failed to restore screener schedule: {e}")
+    finally:
+        db.close()
