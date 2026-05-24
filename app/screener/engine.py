@@ -215,6 +215,7 @@ async def _execute_screener(
         # Step 5: Compute indicators + apply technical filters + score
         results = []
         total = len(symbols_to_scan)
+        filter_fail_counts: dict[str, int] = {}  # Track which filter rejects most stocks
 
         for idx, sym in enumerate(symbols_to_scan):
             try:
@@ -236,9 +237,15 @@ async def _execute_screener(
                     filter_details.update(t_details)
                     if not t_passed:
                         passed = False
+                        # Track which filter caused the failure (the last False one)
+                        for fname, fpassed in t_details.items():
+                            if fpassed is False or fpassed is np.bool_(False):
+                                filter_fail_counts[fname] = filter_fail_counts.get(fname, 0) + 1
+                                break
                 elif has_technical_filters and df.empty:
                     passed = False
                     filter_details["_no_data"] = True
+                    filter_fail_counts["_no_data"] = filter_fail_counts.get("_no_data", 0) + 1
 
                 # Custom code filter (skip for now - can be added later)
                 # TODO: sandbox execution for custom filter code
@@ -309,6 +316,8 @@ async def _execute_screener(
                 _update_run(run_id, progress_pct=min(pct, 95))
 
         # Step 6: Persist results
+        if filter_fail_counts:
+            logger.info(f"Screener filter rejection breakdown: {filter_fail_counts}")
         no_data_count = sum(1 for r in results if r.filter_details_json and "_no_data" in r.filter_details_json)
         error_count = sum(1 for r in results if r.filter_details_json and "_error" in r.filter_details_json)
         if no_data_count > 0 or error_count > 0:
