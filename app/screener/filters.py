@@ -199,7 +199,7 @@ def filter_volume_breakout(df: pd.DataFrame, info: dict, params: dict) -> bool:
     if vol is None or vol_ma is None or pd.isna(vol) or pd.isna(vol_ma) or vol_ma == 0:
         return False
 
-    return vol > multiplier * vol_ma
+    return bool(vol > multiplier * vol_ma)
 
 
 def filter_rsi_zone(df: pd.DataFrame, info: dict, params: dict) -> bool:
@@ -216,7 +216,7 @@ def filter_rsi_zone(df: pd.DataFrame, info: dict, params: dict) -> bool:
 
     rsi_min = params.get("min", 30)
     rsi_max = params.get("max", 70)
-    return rsi_min <= rsi <= rsi_max
+    return bool(rsi_min <= rsi <= rsi_max)
 
 
 def filter_bb_squeeze(df: pd.DataFrame, info: dict, params: dict) -> bool:
@@ -241,16 +241,19 @@ def filter_bb_squeeze(df: pd.DataFrame, info: dict, params: dict) -> bool:
     middle = last.get(bbm_col)
     close = last["Close"]
 
-    if any(pd.isna(v) for v in [upper, lower, middle] if v is not None):
+    # Check for None or NaN in any of the band values
+    if upper is None or lower is None or middle is None:
+        return False
+    if pd.isna(upper) or pd.isna(lower) or pd.isna(middle):
         return False
 
     if mode == "breakout":
-        return close > upper if upper and not pd.isna(upper) else False
+        return bool(close > upper)
     else:  # squeeze
         threshold = params.get("width_threshold", 0.15)
-        if middle and middle > 0 and not pd.isna(middle):
+        if middle > 0:
             width = (upper - lower) / middle
-            return width < threshold
+            return bool(width < threshold)
         return False
 
 
@@ -274,7 +277,7 @@ def filter_atr_filter(df: pd.DataFrame, info: dict, params: dict) -> bool:
     atr_pct = (atr / close) * 100
     min_pct = params.get("min_pct", 0)
     max_pct = params.get("max_pct", 100)
-    return min_pct <= atr_pct <= max_pct
+    return bool(min_pct <= atr_pct <= max_pct)
 
 
 def filter_trend_initiation(df: pd.DataFrame, info: dict, params: dict) -> bool:

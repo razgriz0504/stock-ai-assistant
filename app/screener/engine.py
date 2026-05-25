@@ -63,7 +63,7 @@ def _compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df.ta.obv(append=True)
     df['Vol_SMA_5'] = ta.sma(df['Volume'], length=5)
     df['Vol_SMA_20'] = ta.sma(df['Volume'], length=20)
-    df['Volume_Ratio'] = df['Volume'] / df['Vol_SMA_20']
+    df['Volume_Ratio'] = df['Volume'] / df['Vol_SMA_20'].replace(0, np.nan)
 
     return df
 
@@ -241,7 +241,7 @@ async def _execute_screener(
                         passed = False
                         # Track which filter caused the failure (the last False one)
                         for fname, fpassed in t_details.items():
-                            if fpassed is False or fpassed is np.bool_(False):
+                            if not fpassed:
                                 filter_fail_counts[fname] = filter_fail_counts.get(fname, 0) + 1
                                 break
                 elif has_technical_filters and df.empty:
