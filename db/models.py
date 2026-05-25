@@ -1,7 +1,7 @@
 import os
 import logging
 from pathlib import Path
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text, text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from datetime import datetime, timezone
 
@@ -103,18 +103,24 @@ class WeeklyReport(Base):
     sector_data = Column(Text, default="")             # JSON: 行业ETF表现
     watchlist_scores = Column(Text, default="")         # JSON: watchlist评分结果
     hot_stock_scores = Column(Text, default="")         # JSON: 热门股评分结果
+    yield_curve_data = Column(Text, default="")         # JSON: 国债收益率曲线数据
+    x_tweets_data = Column(Text, default="")            # JSON: X 关键账号推文快照
     # --- AI 分析 ---
     ai_market_summary = Column(Text, default="")        # AI大盘综述
     ai_capital_summary = Column(Text, default="")       # AI资金面分析
     ai_geopolitics_summary = Column(Text, default="")   # AI国际局势分析
     ai_sector_summary = Column(Text, default="")        # AI行业分析
     ai_stocks_summary = Column(Text, default="")        # 预留：个股AI综合分析
+    ai_yield_curve_summary = Column(Text, default="")   # AI国债收益率曲线分析
+    ai_x_monitor_summary = Column(Text, default="")     # AI X 舆情综述
     # --- Prompt 审计 ---
     market_system_prompt = Column(Text, default="")     # 生成时使用的市场分析 prompt
     capital_system_prompt = Column(Text, default="")    # 生成时使用的资金面分析 prompt
     geopolitics_system_prompt = Column(Text, default="") # 生成时使用的国际局势分析 prompt
     sector_system_prompt = Column(Text, default="")     # 生成时使用的行业分析 prompt
     stocks_system_prompt = Column(Text, default="")     # 预留：个股分析 prompt
+    yield_curve_system_prompt = Column(Text, default="") # 生成时使用的国债收益率曲线分析 prompt
+    x_monitor_system_prompt = Column(Text, default="")  # 生成时使用的 X 舆情综述 prompt
     # --- 元数据 ---
     watchlist_used = Column(Text, default="")           # JSON: 生成时使用的 watchlist
     error_message = Column(Text, default="")            # 失败时的错误信息
@@ -138,6 +144,13 @@ class ReportConfig(Base):
     default_geopolitics_system_prompt = Column(Text, default="")
     default_sector_system_prompt = Column(Text, default="")
     default_stocks_system_prompt = Column(Text, default="")
+    default_yield_curve_system_prompt = Column(Text, default="")
+    # --- X 监控配置 ---
+    x_api_bearer_token = Column(Text, default="")           # X API v2 Bearer Token
+    x_monitor_enabled = Column(Boolean, default=False)
+    x_monitor_interval_hours = Column(Integer, default=4)
+    default_x_tweet_system_prompt = Column(Text, default="")     # 单条推文处理 prompt
+    default_x_monitor_system_prompt = Column(Text, default="")   # 周报 X 综述 prompt
     # --- 元数据 ---
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -213,6 +226,47 @@ class ScreenerConfig(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 
+# ═══════════════════════════════════════════════════════════════
+# X (Twitter) 舆情监控相关表
+# ═══════════════════════════════════════════════════════════════
+
+class XAccount(Base):
+    """X 监控账号"""
+    __tablename__ = "x_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, index=True, nullable=False)  # 不带 @
+    x_user_id = Column(String(64), default="")                              # X 平台 numeric id
+    display_name = Column(String(128), default="")
+    category = Column(String(32), default="")           # macro / fed / analyst / ceo / media
+    enabled = Column(Boolean, default=True)
+    last_tweet_id = Column(String(64), default="")      # since_id 增量游标
+    last_fetched_at = Column(DateTime, nullable=True)
+    note = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class XTweet(Base):
+    """X 推文存档"""
+    __tablename__ = "x_tweets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    tweet_id = Column(String(64), unique=True, index=True, nullable=False)
+    account_id = Column(Integer, ForeignKey("x_accounts.id"), index=True)
+    username = Column(String(64), index=True)
+    text = Column(Text)                                  # 原文
+    text_zh = Column(Text, default="")                   # 中文翻译
+    key_points = Column(Text, default="[]")              # JSON list: ["要点1", "要点2"]
+    sentiment = Column(String(16), default="")           # bullish / bearish / neutral
+    impact_assets = Column(Text, default="[]")           # JSON list: ["SPY", "TLT"]
+    market_impact = Column(Text, default="")             # 市场影响评述
+    metrics = Column(Text, default="{}")                 # JSON: like/retweet/reply 计数
+    created_at_x = Column(DateTime, index=True)          # X 上发布时间（UTC）
+    fetched_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    processed = Column(Boolean, default=False, index=True)
+    processing_error = Column(Text, default="")
+
+
 def init_db():
     """初始化数据库，创建所有表 + 自动迁移缺失列"""
     Base.metadata.create_all(bind=engine)
@@ -229,6 +283,20 @@ def _migrate_missing_columns():
         ("report_config", "default_geopolitics_system_prompt", "TEXT DEFAULT ''"),
         ("weekly_reports", "ai_geopolitics_summary", "TEXT DEFAULT ''"),
         ("weekly_reports", "geopolitics_system_prompt", "TEXT DEFAULT ''"),
+        # 国债收益率曲线相关迁移
+        ("weekly_reports", "yield_curve_data", "TEXT DEFAULT ''"),
+        ("weekly_reports", "ai_yield_curve_summary", "TEXT DEFAULT ''"),
+        ("weekly_reports", "yield_curve_system_prompt", "TEXT DEFAULT ''"),
+        ("report_config", "default_yield_curve_system_prompt", "TEXT DEFAULT ''"),
+        # X 舆情监控相关迁移
+        ("weekly_reports", "x_tweets_data", "TEXT DEFAULT ''"),
+        ("weekly_reports", "ai_x_monitor_summary", "TEXT DEFAULT ''"),
+        ("weekly_reports", "x_monitor_system_prompt", "TEXT DEFAULT ''"),
+        ("report_config", "x_api_bearer_token", "TEXT DEFAULT ''"),
+        ("report_config", "x_monitor_enabled", "INTEGER DEFAULT 0"),
+        ("report_config", "x_monitor_interval_hours", "INTEGER DEFAULT 4"),
+        ("report_config", "default_x_tweet_system_prompt", "TEXT DEFAULT ''"),
+        ("report_config", "default_x_monitor_system_prompt", "TEXT DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
@@ -249,3 +317,45 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 默认 X 监控账号种子
+# ═══════════════════════════════════════════════════════════════
+
+DEFAULT_X_ACCOUNTS = [
+    # 宏观 / 央行
+    {"username": "federalreserve", "display_name": "Federal Reserve", "category": "fed"},
+    {"username": "ecb", "display_name": "European Central Bank", "category": "fed"},
+    {"username": "nouriel", "display_name": "Nouriel Roubini", "category": "macro"},
+    {"username": "elerianm", "display_name": "Mohamed A. El-Erian", "category": "macro"},
+    {"username": "LizAnnSonders", "display_name": "Liz Ann Sonders", "category": "analyst"},
+    {"username": "SteveLiesman", "display_name": "Steve Liesman", "category": "analyst"},
+    # 市场 / 媒体 / CEO
+    {"username": "elonmusk", "display_name": "Elon Musk", "category": "ceo"},
+    {"username": "CathieDWood", "display_name": "Cathie Wood", "category": "ceo"},
+    {"username": "jimcramer", "display_name": "Jim Cramer", "category": "analyst"},
+    {"username": "business", "display_name": "Bloomberg Business", "category": "media"},
+    {"username": "CNBC", "display_name": "CNBC", "category": "media"},
+]
+
+
+def get_or_create_x_accounts(db):
+    """初次启动时种子默认 X 账号；返回当前所有账号"""
+    existing = {a.username.lower() for a in db.query(XAccount).all()}
+    added = 0
+    for spec in DEFAULT_X_ACCOUNTS:
+        if spec["username"].lower() in existing:
+            continue
+        db.add(XAccount(
+            username=spec["username"],
+            display_name=spec["display_name"],
+            category=spec["category"],
+            enabled=True,
+        ))
+        added += 1
+    if added:
+        db.commit()
+        logger = logging.getLogger(__name__)
+        logger.info(f"Seeded {added} default X accounts")
+    return db.query(XAccount).all()

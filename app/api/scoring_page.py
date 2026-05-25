@@ -70,6 +70,14 @@ async def get_report(report_id: int, db: Session = Depends(_get_db)):
         "geopolitics": {
             "ai_geopolitics_summary": report.ai_geopolitics_summary or "",
         },
+        "yield_curve": {
+            "yield_curve": json.loads(report.yield_curve_data) if report.yield_curve_data else {},
+            "ai_yield_curve_summary": report.ai_yield_curve_summary or "",
+        },
+        "x_monitor": {
+            "x_tweets_data": json.loads(report.x_tweets_data) if getattr(report, "x_tweets_data", None) else {},
+            "ai_x_monitor_summary": getattr(report, "ai_x_monitor_summary", None) or "",
+        },
         "sector": {
             "sectors": json.loads(report.sector_data) if report.sector_data else [],
             "ai_sector_summary": report.ai_sector_summary or "",
@@ -159,6 +167,71 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
 .ai-text em { color: #6b6560; }
 .ai-text .katex { font-size: 1em; }
 .ai-text .katex-display { margin: 8px 0; overflow-x: auto; }
+
+/* Yield Curve */
+.yc-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+.yc-card { background: #fff; border: 1px solid #e8e4de; border-radius: 10px; padding: 20px; }
+.yc-regime { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.yc-regime-badge { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; letter-spacing: 0.5px; text-transform: uppercase; }
+.yc-regime-badge.bear-steepener { background: rgba(185,28,28,0.08); color: #b91c1c; }
+.yc-regime-badge.bear-flattener { background: rgba(180,83,9,0.10); color: #b45309; }
+.yc-regime-badge.bull-steepener { background: rgba(45,106,79,0.10); color: #2d6a4f; }
+.yc-regime-badge.bull-flattener { background: rgba(124,58,237,0.10); color: #7c3aed; }
+.yc-regime-badge.mixed { background: rgba(168,162,158,0.20); color: #6b6560; }
+.yc-regime-logic { font-size: 13px; color: #44403c; line-height: 1.6; }
+.yc-yields-tbl { width: 100%; border-collapse: collapse; }
+.yc-yields-tbl th { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #6b6560; padding: 8px 6px; text-align: left; border-bottom: 1px solid #e8e4de; font-weight: 500; }
+.yc-yields-tbl td { padding: 8px 6px; border-bottom: 1px solid #f5f3ef; font-size: 13px; }
+.yc-yields-tbl tr:last-child td { border-bottom: none; }
+.yc-tenor { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.yc-yield { font-family: 'JetBrains Mono', monospace; font-weight: 500; }
+.yc-bp { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.yc-bp.up { color: #b91c1c; }
+.yc-bp.down { color: #2d6a4f; }
+.yc-bp.flat { color: #a8a29e; }
+.yc-spreads { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.yc-spread-item { background: #faf9f5; border: 1px solid #e8e4de; border-radius: 6px; padding: 10px 12px; }
+.yc-spread-name { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b6560; letter-spacing: 1px; margin-bottom: 4px; }
+.yc-spread-val { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 700; }
+.yc-spread-chg { font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-top: 2px; }
+.yc-cross { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+.yc-cross-item { background: #faf9f5; border: 1px solid #e8e4de; border-radius: 6px; padding: 8px 10px; text-align: center; }
+.yc-cross-name { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #6b6560; letter-spacing: 0.5px; margin-bottom: 4px; }
+.yc-cross-val { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.yc-cross-chg { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+@media (max-width: 700px) { .yc-grid { grid-template-columns: 1fr; } .yc-cross { grid-template-columns: repeat(3, 1fr); } .yc-spreads { grid-template-columns: 1fr; } }
+
+/* X Monitor */
+.xm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.xm-card { background: #fff; border: 1px solid #e8e4de; border-radius: 10px; padding: 20px; }
+.xm-card-title { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: #6b6560; margin-bottom: 14px; }
+.xm-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.xm-stat { text-align: center; padding: 10px; background: #faf9f5; border-radius: 6px; }
+.xm-stat-val { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; }
+.xm-stat-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 1px; color: #6b6560; margin-top: 4px; text-transform: uppercase; }
+.xm-sentiment-bullish { color: #2d6a4f; }
+.xm-sentiment-bearish { color: #b91c1c; }
+.xm-sentiment-neutral { color: #6b6560; }
+.xm-asset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.xm-asset-tag { font-family: 'JetBrains Mono', monospace; font-size: 11px; padding: 3px 8px; border-radius: 4px; background: #faf9f5; border: 1px solid #e8e4de; color: #44403c; }
+.xm-asset-tag b { color: #c9774a; margin-left: 4px; }
+.xm-tweet-list { display: flex; flex-direction: column; gap: 12px; }
+.xm-tweet-card { background: #fff; border: 1px solid #e8e4de; border-radius: 10px; padding: 16px 18px; }
+.xm-tweet-card:hover { border-color: #c9774a; }
+.xm-tweet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; }
+.xm-tweet-user { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; color: #1a1a1a; }
+.xm-tweet-user::before { content: '@'; color: #a8a29e; margin-right: 1px; }
+.xm-tweet-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a8a29e; display: flex; gap: 10px; align-items: center; }
+.xm-sentiment-pill { font-family: 'JetBrains Mono', monospace; font-size: 10px; padding: 2px 8px; border-radius: 10px; text-transform: uppercase; letter-spacing: 1px; }
+.xm-sentiment-pill.bullish { background: #d8e9df; color: #2d6a4f; }
+.xm-sentiment-pill.bearish { background: #f5d7d7; color: #b91c1c; }
+.xm-sentiment-pill.neutral { background: #ece9e2; color: #6b6560; }
+.xm-tweet-text { font-size: 13px; line-height: 1.7; color: #6b6560; margin-bottom: 6px; font-style: italic; }
+.xm-tweet-zh { font-size: 14px; line-height: 1.7; color: #1a1a1a; margin-bottom: 8px; }
+.xm-tweet-impact { font-size: 12px; color: #44403c; padding: 8px 10px; background: #faf9f5; border-radius: 6px; margin-top: 8px; }
+.xm-tweet-assets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.xm-empty { padding: 30px; text-align: center; color: #a8a29e; font-size: 13px; background: #fff; border: 1px solid #e8e4de; border-radius: 10px; }
+@media (max-width: 700px) { .xm-grid { grid-template-columns: 1fr; } .xm-stats { grid-template-columns: repeat(3, 1fr); } }
 
 /* Sector Table */
 .sector-tbl { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e8e4de; border-radius: 10px; overflow: hidden; }
@@ -299,9 +372,19 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 4: Sector Analysis -->
+  <!-- Section 4: Yield Curve -->
   <div class="sec-head" style="margin-top:48px">
     <span class="sec-num">04</span>
+    <h2 class="sec-title">国债收益率曲线</h2>
+    <span class="sec-sub">Treasury Yield Curve</span>
+  </div>
+  <div id="section-yield-curve">
+    <div class="loading-box">加载中...</div>
+  </div>
+
+  <!-- Section 5: Sector Analysis -->
+  <div class="sec-head" style="margin-top:48px">
+    <span class="sec-num">05</span>
     <h2 class="sec-title">行业板块</h2>
     <span class="sec-sub">Sector Performance</span>
   </div>
@@ -309,9 +392,9 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
-  <!-- Section 5: Stock Scoring -->
+  <!-- Section 6: Stock Scoring -->
   <div class="sec-head" style="margin-top:48px">
-    <span class="sec-num">05</span>
+    <span class="sec-num">06</span>
     <h2 class="sec-title">个股评分</h2>
     <span class="sec-sub">Stock Scoring</span>
     <span class="score-help" style="margin-left:8px;cursor:help;position:relative;display:inline-block;">
@@ -330,6 +413,16 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     </span>
   </div>
   <div id="section-stocks">
+    <div class="loading-box">加载中...</div>
+  </div>
+
+  <!-- Section 7: X Monitor -->
+  <div class="sec-head" style="margin-top:48px">
+    <span class="sec-num">07</span>
+    <h2 class="sec-title">X 舆情监控</h2>
+    <span class="sec-sub">X Sentiment Monitor</span>
+  </div>
+  <div id="section-x-monitor">
     <div class="loading-box">加载中...</div>
   </div>
 
@@ -430,6 +523,82 @@ function renderGeopolitics(data) {
   renderLatex('section-geopolitics');
 }
 
+function renderYieldCurve(data) {
+  const yc = data.yield_curve || {};
+  const yields = yc.yields || {};
+  const changes = yc.weekly_changes_bp || {};
+  const spreads = yc.spreads || {};
+  const spreadChanges = yc.spread_changes_bp || {};
+  const cross = yc.cross_asset || {};
+  const regime = yc.regime || 'Mixed';
+  const regimeLogic = yc.regime_logic || '';
+
+  const tenorOrder = ['3M', '2Y', '5Y', '10Y', '30Y'];
+  const yieldsRows = tenorOrder.filter(t => yields[t] !== undefined).map(t => {
+    const yld = yields[t];
+    const chg = changes[t];
+    let bpClass = 'flat', bpStr = '-';
+    if (chg !== undefined && chg !== null) {
+      bpClass = chg > 0 ? 'up' : chg < 0 ? 'down' : 'flat';
+      bpStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + ' bp';
+    }
+    return `<tr><td class="yc-tenor">${t}</td><td class="yc-yield">${yld.toFixed(3)}%</td><td class="yc-bp ${bpClass}">${bpStr}</td></tr>`;
+  }).join('');
+
+  const spreadHtml = ['2s10s', '3m10s', '10s30s'].map(k => {
+    const v = spreads[k], c = spreadChanges[k];
+    if (v === undefined || v === null) return '';
+    const cClass = c > 0 ? 'up' : c < 0 ? 'down' : 'flat';
+    const cStr = c !== undefined && c !== null ? ((c >= 0 ? '+' : '') + c.toFixed(1) + ' bp') : '-';
+    const valColor = v >= 0 ? '#2d6a4f' : '#b91c1c';
+    return `<div class="yc-spread-item">
+      <div class="yc-spread-name">${k.toUpperCase()}</div>
+      <div class="yc-spread-val" style="color:${valColor}">${(v >= 0 ? '+' : '') + v.toFixed(1)} bp</div>
+      <div class="yc-spread-chg yc-bp ${cClass}">本周 ${cStr}</div>
+    </div>`;
+  }).join('');
+
+  const crossOrder = ['VIX', 'DXY', 'GLD', 'CL=F', 'SPY'];
+  const crossHtml = crossOrder.filter(k => cross[k]).map(k => {
+    const c = cross[k];
+    const chgPct = c.weekly_change_pct;
+    const chgClass2 = chgPct > 0 ? 'up' : chgPct < 0 ? 'down' : 'flat';
+    return `<div class="yc-cross-item">
+      <div class="yc-cross-name">${k}</div>
+      <div class="yc-cross-val">${c.current}</div>
+      <div class="yc-cross-chg yc-bp ${chgClass2}">${(chgPct >= 0 ? '+' : '') + chgPct.toFixed(2)}%</div>
+    </div>`;
+  }).join('');
+
+  const regimeClass = regime.toLowerCase().replace(/\s+/g, '-');
+
+  document.getElementById('section-yield-curve').innerHTML =
+    `<div class="yc-grid">
+      <div class="yc-card">
+        <div class="yc-regime">
+          <span class="yc-regime-badge ${regimeClass}">${regime}</span>
+          <span class="yc-regime-logic">${regimeLogic}</span>
+        </div>
+        <div class="yc-spreads">${spreadHtml}</div>
+      </div>
+      <div class="yc-card">
+        <table class="yc-yields-tbl">
+          <thead><tr><th>期限</th><th>收益率</th><th>本周变化</th></tr></thead>
+          <tbody>${yieldsRows}</tbody>
+        </table>
+      </div>
+    </div>` +
+    `<div class="yc-card" style="margin-bottom:16px">
+      <div class="ai-label" style="margin-bottom:8px">CROSS-ASSET</div>
+      <div class="yc-cross">${crossHtml}</div>
+    </div>` +
+    `<div class="ai-box">
+      <div class="ai-label">AI YIELD CURVE ANALYSIS</div>
+      <div class="ai-text">${renderMd(data.ai_yield_curve_summary || 'AI 分析暂不可用')}</div>
+    </div>`;
+  renderLatex('section-yield-curve');
+}
+
 function renderSector(data) {
   const rows = (data.sectors || []).map(s =>
     `<tr>
@@ -482,12 +651,89 @@ function renderStocks(data) {
     `<div class="stock-grid">${cardHtml(data.hot_stock_scores)}</div>`;
 }
 
+function renderXMonitor(data) {
+  const x = data.x_tweets_data || {};
+  const total = x.total_count || 0;
+  const sd = x.sentiment_distribution || {bullish: 0, bearish: 0, neutral: 0};
+  const accounts = x.accounts || [];
+  const topAssets = x.top_assets_mentioned || [];
+  const topTweets = x.top_tweets || [];
+  const days = x.window_days || 7;
+
+  if (!total) {
+    document.getElementById('section-x-monitor').innerHTML =
+      `<div class="xm-empty">本周暂无 X 关键账号推文数据</div>` +
+      `<div class="ai-box" style="margin-top:16px">
+        <div class="ai-label">AI X SENTIMENT MONITOR</div>
+        <div class="ai-text">${renderMd(data.ai_x_monitor_summary || 'AI 分析暂不可用')}</div>
+      </div>`;
+    renderLatex('section-x-monitor');
+    return;
+  }
+
+  const overviewHtml = `<div class="xm-card">
+    <div class="xm-card-title">舆情分布 · 近 ${days} 天 · ${total} 条推文 · ${accounts.length} 个账号</div>
+    <div class="xm-stats">
+      <div class="xm-stat"><div class="xm-stat-val xm-sentiment-bullish">${sd.bullish || 0}</div><div class="xm-stat-label">BULLISH</div></div>
+      <div class="xm-stat"><div class="xm-stat-val xm-sentiment-neutral">${sd.neutral || 0}</div><div class="xm-stat-label">NEUTRAL</div></div>
+      <div class="xm-stat"><div class="xm-stat-val xm-sentiment-bearish">${sd.bearish || 0}</div><div class="xm-stat-label">BEARISH</div></div>
+    </div>
+  </div>`;
+
+  const assetsHtml = `<div class="xm-card">
+    <div class="xm-card-title">热议标的 TOP ${Math.min(topAssets.length, 15)}</div>
+    <div class="xm-asset-list">
+      ${topAssets.length === 0 ? '<span style="color:#a8a29e;font-size:12px;">暂无</span>' :
+        topAssets.map(a => `<span class="xm-asset-tag">${a.ticker}<b>${a.count}</b></span>`).join('')}
+    </div>
+  </div>`;
+
+  const tweetsHtml = topTweets.map(t => {
+    const sent = t.sentiment || 'neutral';
+    const dt = t.created_at ? t.created_at.slice(0, 10) : '';
+    const assetTags = (t.impact_assets || []).map(a => `<span class="xm-asset-tag">${a}</span>`).join('');
+    const impact = t.market_impact ? `<div class="xm-tweet-impact"><b>市场影响：</b>${escapeHtml(t.market_impact)}</div>` : '';
+    return `<div class="xm-tweet-card">
+      <div class="xm-tweet-head">
+        <span class="xm-tweet-user">${escapeHtml(t.username || '')}</span>
+        <span class="xm-tweet-meta">
+          <span class="xm-sentiment-pill ${sent}">${sent}</span>
+          <span>${dt}</span>
+          <span>&hearts; ${t.like_count || 0}</span>
+          <span>&#8634; ${t.retweet_count || 0}</span>
+        </span>
+      </div>
+      ${t.text_zh ? `<div class="xm-tweet-zh">${escapeHtml(t.text_zh)}</div>` : ''}
+      ${t.text ? `<div class="xm-tweet-text">${escapeHtml(t.text)}</div>` : ''}
+      ${impact}
+      ${assetTags ? `<div class="xm-tweet-assets">${assetTags}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  document.getElementById('section-x-monitor').innerHTML =
+    `<div class="xm-grid">${overviewHtml}${assetsHtml}</div>` +
+    (tweetsHtml ? `<div class="xm-card" style="margin-bottom:16px">
+      <div class="xm-card-title">本周代表性推文</div>
+      <div class="xm-tweet-list">${tweetsHtml}</div>
+    </div>` : '') +
+    `<div class="ai-box">
+      <div class="ai-label">AI X SENTIMENT MONITOR</div>
+      <div class="ai-text">${renderMd(data.ai_x_monitor_summary || 'AI 分析暂不可用')}</div>
+    </div>`;
+  renderLatex('section-x-monitor');
+}
+
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
 function showEmpty() {
   const html = `<div class="empty-box">
     <div class="empty-icon">&#x1f4ca;</div>
     <p>暂无已生成的周报，请联系管理员生成</p>
   </div>`;
-  ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
+  ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
   document.querySelector('.page-wrap').insertAdjacentHTML('beforeend', html);
@@ -519,7 +765,7 @@ async function loadReport(reportId) {
     const resp = await fetch(`/api/report/${reportId}`);
     const data = await resp.json();
     if (data.error) {
-      ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
+      ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
         document.getElementById(id).innerHTML = `<div class="loading-box">${data.error}</div>`;
       });
       return;
@@ -536,11 +782,13 @@ async function loadReport(reportId) {
     renderMarket(data.market);
     renderCapital(data.capital);
     renderGeopolitics(data.geopolitics);
+    renderYieldCurve(data.yield_curve || {});
     renderSector(data.sector);
     renderStocks(data.stocks);
+    renderXMonitor(data.x_monitor || {});
   } catch (e) {
     console.error('loadReport error:', e);
-    ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(id => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
       document.getElementById(id).innerHTML = '<div class="loading-box">加载失败</div>';
     });
   }
@@ -553,7 +801,7 @@ function onVersionChange() {
     // Remove any empty-box
     const empty = document.querySelector('.empty-box');
     if (empty) empty.remove();
-    ['section-market', 'section-capital', 'section-geopolitics', 'section-sector', 'section-stocks'].forEach(s => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(s => {
       document.getElementById(s).innerHTML = '<div class="loading-box">加载中...</div>';
     });
     loadReport(id);

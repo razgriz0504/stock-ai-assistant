@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
 from config import settings
-from db.models import init_db
+from db.models import init_db, SessionLocal, get_or_create_x_accounts
 from app.api.feishu_webhook import router as feishu_router
 from app.api.health import router as health_router
 from app.api.web_chat import router as chat_router
@@ -15,7 +15,11 @@ from app.api.watchlist_page import router as watchlist_router
 from app.api.scoring_page import router as scoring_router
 from app.api.report_admin_page import router as report_admin_router
 from app.api.screener_page import router as screener_router
-from app.monitor.scheduler import start_scheduler, stop_scheduler, restore_report_schedule, restore_screener_schedule
+from app.api.x_monitor_page import router as x_monitor_router
+from app.monitor.scheduler import (
+    start_scheduler, stop_scheduler, restore_report_schedule,
+    restore_screener_schedule, restore_x_monitor_schedule,
+)
 
 # 配置日志
 logging.basicConfig(
@@ -32,9 +36,21 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Stock AI Assistant...")
     init_db()
     logger.info("Database initialized")
+    # 种子默认 X 账号
+    try:
+        _seed_db = SessionLocal()
+        try:
+            seeded = get_or_create_x_accounts(_seed_db)
+            if seeded:
+                logger.info(f"Seeded {len(seeded)} default X accounts")
+        finally:
+            _seed_db.close()
+    except Exception as e:
+        logger.warning(f"X accounts seeding skipped: {e}")
     start_scheduler()
     restore_report_schedule()
     restore_screener_schedule()
+    restore_x_monitor_schedule()
     logger.info("Scheduler started")
     logger.info(f"Default LLM: {settings.default_llm}")
 
@@ -61,6 +77,7 @@ app.include_router(watchlist_router)
 app.include_router(scoring_router)
 app.include_router(report_admin_router)
 app.include_router(screener_router)
+app.include_router(x_monitor_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -119,6 +136,11 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-icon">&#x1f50d;</div>
         <div class="card-title">Stock Screener</div>
         <div class="card-desc">Scan S&P 500 + Nasdaq 100 with technical & fundamental filters</div>
+    </a>
+    <a class="card" href="/x-monitor">
+        <div class="card-icon">&#x1f426;</div>
+        <div class="card-title">X 舆情监控</div>
+        <div class="card-desc">Track key X (Twitter) accounts with AI translation & sentiment</div>
     </a>
     <a class="card" href="/settings">
         <div class="card-icon">&#x2699;</div>

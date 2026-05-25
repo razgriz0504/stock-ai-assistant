@@ -3,6 +3,7 @@ import logging
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import pytz
 
 from app.monitor.price_monitor import check_all_monitors
@@ -315,5 +316,65 @@ def restore_screener_schedule():
             logger.info("Screener schedule is disabled or not configured")
     except Exception as e:
         logger.error(f"Failed to restore screener schedule: {e}")
+    finally:
+        db.close()
+
+
+# ─── X (Twitter) 舆情监控定时任务 ───
+
+def add_x_monitor_job(interval_hours: int = 4):
+    """添加/更新 X 监控定时任务（按小时间隔触发）"""
+    interval_hours = max(1, int(interval_hours or 4))
+    scheduler.add_job(
+        _run_x_monitor_job,
+        IntervalTrigger(hours=interval_hours, timezone=ET),
+        id="x_monitor_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"X monitor job scheduled every {interval_hours} hour(s)")
+
+
+def remove_x_monitor_job():
+    """移除 X 监控定时任务"""
+    try:
+        scheduler.remove_job("x_monitor_scheduled")
+        logger.info("X monitor job removed")
+    except Exception:
+        pass
+
+
+async def _run_x_monitor_job():
+    """定时调用 X 监控作业"""
+    from app.x_monitor.scheduler_job import run_x_monitor_job
+
+    logger.info("Scheduled X monitor job triggered")
+    try:
+        result = await run_x_monitor_job(force_process=True)
+        logger.info(
+            "X monitor done: accounts=%s added=%s processed=%s failed=%s errors=%s",
+            result.get("accounts_total"),
+            result.get("tweets_added"),
+            result.get("processed"),
+            result.get("failed"),
+            len(result.get("errors") or []),
+        )
+    except Exception as e:
+        logger.error(f"X monitor job error: {e}", exc_info=True)
+
+
+def restore_x_monitor_schedule():
+    """启动时从 DB 恢复 X 监控定时配置"""
+    from db.models import SessionLocal, ReportConfig
+
+    db = SessionLocal()
+    try:
+        cfg = db.query(ReportConfig).filter_by(id=1).first()
+        if cfg and getattr(cfg, "x_monitor_enabled", False):
+            add_x_monitor_job(interval_hours=getattr(cfg, "x_monitor_interval_hours", 4))
+            logger.info("X monitor schedule restored from DB config")
+        else:
+            logger.info("X monitor schedule is disabled in DB config")
+    except Exception as e:
+        logger.error(f"Failed to restore X monitor schedule: {e}")
     finally:
         db.close()

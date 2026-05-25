@@ -17,7 +17,10 @@ from app.report.weekly_report import (
     DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
     DEFAULT_SECTOR_SYSTEM_PROMPT,
     DEFAULT_STOCKS_SYSTEM_PROMPT,
+    DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
+    DEFAULT_X_MONITOR_SYSTEM_PROMPT,
 )
+from app.x_monitor.processor import DEFAULT_X_TWEET_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -45,6 +48,9 @@ class PromptsUpdate(BaseModel):
     geopolitics_system_prompt: Optional[str] = None
     sector_system_prompt: Optional[str] = None
     stocks_system_prompt: Optional[str] = None
+    yield_curve_system_prompt: Optional[str] = None
+    x_tweet_system_prompt: Optional[str] = None
+    x_monitor_system_prompt: Optional[str] = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -102,7 +108,7 @@ async def start_generate(
     import json as _json
 
     config = get_or_create_report_config(db)
-    market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt = _resolve_prompts(config)
+    market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt, yield_curve_prompt, x_monitor_prompt = _resolve_prompts(config)
     from app.llm.client import get_model
     model_name = get_model()
     version = _get_next_version(db)
@@ -118,6 +124,8 @@ async def start_generate(
         geopolitics_system_prompt=geopolitics_prompt,
         sector_system_prompt=sector_prompt,
         stocks_system_prompt=stocks_prompt,
+        yield_curve_system_prompt=yield_curve_prompt,
+        x_monitor_system_prompt=x_monitor_prompt,
         watchlist_used=_json.dumps(watchlist),
     )
     db.add(report)
@@ -126,12 +134,12 @@ async def start_generate(
     report_id = report.id
 
     # 后台任务执行实际生成
-    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, geopolitics_prompt, sector_prompt)
+    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, yield_curve_prompt, x_monitor_prompt)
 
     return {"report_id": report_id, "version": version, "status": "running"}
 
 
-async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, geopolitics_prompt: str, sector_prompt: str):
+async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, geopolitics_prompt: str, sector_prompt: str, yield_curve_prompt: str, x_monitor_prompt: str):
     """后台任务：执行报告生成"""
     db = SessionLocal()
     try:
@@ -142,24 +150,37 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         import asyncio
         import json
         from app.report.weekly_report import (
-            fetch_index_data, fetch_sector_data,
+            fetch_index_data, fetch_sector_data, fetch_yield_curve_data,
+            fetch_x_tweets_data,
             get_report_section_stocks,
             generate_ai_market_summary, generate_ai_capital_summary, generate_ai_geopolitics_summary, generate_ai_sector_summary,
+            generate_ai_yield_curve_summary, generate_ai_x_monitor_summary,
         )
 
         # 并行获取数据
-        index_data, sector_data, stocks_data = await asyncio.gather(
+        index_data, sector_data, stocks_data, curve_data, x_data = await asyncio.gather(
             asyncio.to_thread(fetch_index_data),
             asyncio.to_thread(fetch_sector_data),
             get_report_section_stocks(watchlist),
+            asyncio.to_thread(fetch_yield_curve_data),
+            asyncio.to_thread(fetch_x_tweets_data, db, 7),
         )
 
         # AI 分析
-        ai_market_summary, ai_capital_summary, ai_geopolitics_summary, ai_sector_summary = await asyncio.gather(
+        (
+            ai_market_summary,
+            ai_capital_summary,
+            ai_geopolitics_summary,
+            ai_sector_summary,
+            ai_yield_curve_summary,
+            ai_x_monitor_summary,
+        ) = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
             generate_ai_capital_summary(system_prompt=capital_prompt),
             generate_ai_geopolitics_summary(system_prompt=geopolitics_prompt),
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
+            generate_ai_yield_curve_summary(curve_data, system_prompt=yield_curve_prompt),
+            generate_ai_x_monitor_summary(x_data, system_prompt=x_monitor_prompt),
         )
 
         # 序列化写入 DB
@@ -167,10 +188,14 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         report.sector_data = json.dumps(sector_data, ensure_ascii=False)
         report.watchlist_scores = json.dumps(stocks_data.get("watchlist_scores", []), ensure_ascii=False)
         report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
+        report.yield_curve_data = json.dumps(curve_data, ensure_ascii=False)
+        report.x_tweets_data = json.dumps(x_data, ensure_ascii=False)
         report.ai_market_summary = ai_market_summary
         report.ai_capital_summary = ai_capital_summary
         report.ai_geopolitics_summary = ai_geopolitics_summary
         report.ai_sector_summary = ai_sector_summary
+        report.ai_yield_curve_summary = ai_yield_curve_summary
+        report.ai_x_monitor_summary = ai_x_monitor_summary
         report.status = "completed"
         db.commit()
 
@@ -225,12 +250,18 @@ async def get_prompts(db: Session = Depends(_get_db)):
         "geopolitics_system_prompt": config.default_geopolitics_system_prompt or DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
         "sector_system_prompt": config.default_sector_system_prompt or DEFAULT_SECTOR_SYSTEM_PROMPT,
         "stocks_system_prompt": config.default_stocks_system_prompt or DEFAULT_STOCKS_SYSTEM_PROMPT,
+        "yield_curve_system_prompt": getattr(config, "default_yield_curve_system_prompt", None) or DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
+        "x_tweet_system_prompt": getattr(config, "default_x_tweet_system_prompt", None) or DEFAULT_X_TWEET_SYSTEM_PROMPT,
+        "x_monitor_system_prompt": getattr(config, "default_x_monitor_system_prompt", None) or DEFAULT_X_MONITOR_SYSTEM_PROMPT,
         "defaults": {
             "market_system_prompt": DEFAULT_MARKET_SYSTEM_PROMPT,
             "capital_system_prompt": DEFAULT_CAPITAL_SYSTEM_PROMPT,
             "geopolitics_system_prompt": DEFAULT_GEOPOLITICS_SYSTEM_PROMPT,
             "sector_system_prompt": DEFAULT_SECTOR_SYSTEM_PROMPT,
             "stocks_system_prompt": DEFAULT_STOCKS_SYSTEM_PROMPT,
+            "yield_curve_system_prompt": DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
+            "x_tweet_system_prompt": DEFAULT_X_TWEET_SYSTEM_PROMPT,
+            "x_monitor_system_prompt": DEFAULT_X_MONITOR_SYSTEM_PROMPT,
         },
     }
 
@@ -249,6 +280,12 @@ async def update_prompts(req: PromptsUpdate, db: Session = Depends(_get_db)):
         config.default_sector_system_prompt = req.sector_system_prompt
     if req.stocks_system_prompt is not None:
         config.default_stocks_system_prompt = req.stocks_system_prompt
+    if req.yield_curve_system_prompt is not None:
+        config.default_yield_curve_system_prompt = req.yield_curve_system_prompt
+    if req.x_tweet_system_prompt is not None:
+        config.default_x_tweet_system_prompt = req.x_tweet_system_prompt
+    if req.x_monitor_system_prompt is not None:
+        config.default_x_monitor_system_prompt = req.x_monitor_system_prompt
     db.commit()
     db.refresh(config)
     return {"success": True}
@@ -491,6 +528,24 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
         <div class="prompt-preview" id="preview-sector"></div>
       </div>
       <div class="form-group">
+        <label class="form-label">国债收益率曲线 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-yield-curve" oninput="previewPrompt('yield-curve')"></textarea>
+        <div class="form-hint">用于 AI 国债收益率曲线分析的系统提示词，留空使用默认值。支持 Markdown 格式。</div>
+        <div class="prompt-preview" id="preview-yield-curve"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">X 单条推文处理 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-x-tweet" oninput="previewPrompt('x-tweet')"></textarea>
+        <div class="form-hint">用于 AI 处理单条 X 推文（中译 + 要点 + 情绪 + 影响标的），需输出 JSON。留空使用默认值。</div>
+        <div class="prompt-preview" id="preview-x-tweet"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">X 舆情综述 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-x-monitor" oninput="previewPrompt('x-monitor')"></textarea>
+        <div class="form-hint">用于 AI 生成 X 舆情综述（周报 Section 07），基于本周聚合数据撰写 Markdown 报告。留空使用默认值。</div>
+        <div class="prompt-preview" id="preview-x-monitor"></div>
+      </div>
+      <div class="form-group">
         <label class="form-label">个股分析 System Prompt（预留）</label>
         <textarea class="form-textarea" id="prompt-stocks"></textarea>
         <div class="form-hint">预留字段，当前未使用</div>
@@ -690,9 +745,14 @@ async function loadPrompts() {
     document.getElementById('prompt-capital').value = data.capital_system_prompt;
     document.getElementById('prompt-geopolitics').value = data.geopolitics_system_prompt;
     document.getElementById('prompt-sector').value = data.sector_system_prompt;
+    document.getElementById('prompt-yield-curve').value = data.yield_curve_system_prompt || '';
     document.getElementById('prompt-stocks').value = data.stocks_system_prompt;
+    const xt = document.getElementById('prompt-x-tweet');
+    if (xt) xt.value = data.x_tweet_system_prompt || '';
+    const xm = document.getElementById('prompt-x-monitor');
+    if (xm) xm.value = data.x_monitor_system_prompt || '';
     // 渲染预览
-    ['market', 'capital', 'geopolitics', 'sector'].forEach(name => previewPrompt(name));
+    ['market', 'capital', 'geopolitics', 'sector', 'yield-curve', 'x-tweet', 'x-monitor'].forEach(name => previewPrompt(name));
   } catch (e) {
     console.error('loadPrompts error:', e);
   }
@@ -700,6 +760,8 @@ async function loadPrompts() {
 
 async function savePrompts() {
   try {
+    const xtEl = document.getElementById('prompt-x-tweet');
+    const xmEl = document.getElementById('prompt-x-monitor');
     const resp = await fetch('/api/admin/prompts', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -708,7 +770,10 @@ async function savePrompts() {
         capital_system_prompt: document.getElementById('prompt-capital').value,
         geopolitics_system_prompt: document.getElementById('prompt-geopolitics').value,
         sector_system_prompt: document.getElementById('prompt-sector').value,
+        yield_curve_system_prompt: document.getElementById('prompt-yield-curve').value,
         stocks_system_prompt: document.getElementById('prompt-stocks').value,
+        x_tweet_system_prompt: xtEl ? xtEl.value : undefined,
+        x_monitor_system_prompt: xmEl ? xmEl.value : undefined,
       }),
     });
     const data = await resp.json();
