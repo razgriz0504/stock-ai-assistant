@@ -78,6 +78,10 @@ async def get_report(report_id: int, db: Session = Depends(_get_db)):
             "x_tweets_data": json.loads(report.x_tweets_data) if getattr(report, "x_tweets_data", None) else {},
             "ai_x_monitor_summary": getattr(report, "ai_x_monitor_summary", None) or "",
         },
+        "sector_strength": {
+            "enhanced_sector_data": json.loads(report.enhanced_sector_data) if getattr(report, "enhanced_sector_data", None) else {},
+            "ai_sector_strength_summary": getattr(report, "ai_sector_strength_summary", None) or "",
+        },
         "sector": {
             "sectors": json.loads(report.sector_data) if report.sector_data else [],
             "ai_sector_summary": report.ai_sector_summary or "",
@@ -426,6 +430,16 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
     <div class="loading-box">加载中...</div>
   </div>
 
+  <!-- Section 8: Sector Strength Radar -->
+  <div class="sec-head" style="margin-top:48px">
+    <span class="sec-num">08</span>
+    <h2 class="sec-title">板块强度雷达</h2>
+    <span class="sec-sub">Enhanced Sector Strength</span>
+  </div>
+  <div id="section-sector-strength">
+    <div class="loading-box">加载中...</div>
+  </div>
+
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -723,6 +737,76 @@ function renderXMonitor(data) {
   renderLatex('section-x-monitor');
 }
 
+function renderSectorStrength(data) {
+  const esd = data.enhanced_sector_data || {};
+  const rankings = esd.rankings || [];
+  const benchmark = esd.benchmark || {};
+  const aiSummary = data.ai_sector_strength_summary || '';
+
+  if (!rankings.length) {
+    document.getElementById('section-sector-strength').innerHTML =
+      `<div class="xm-empty">暂无增强板块强度数据</div>` +
+      `<div class="ai-box" style="margin-top:16px">
+        <div class="ai-label">AI SECTOR STRENGTH ANALYSIS</div>
+        <div class="ai-text">${renderMd(aiSummary || 'AI 分析暂不可用')}</div>
+      </div>`;
+    renderLatex('section-sector-strength');
+    return;
+  }
+
+  // Benchmark card
+  const bmHtml = benchmark.ticker ? `<div class="xm-card">
+    <div class="xm-card-title">基准: ${benchmark.ticker} (${benchmark.name || 'S&P 500'})</div>
+    <div class="xm-stats">
+      <div class="xm-stat"><div class="xm-stat-val ${benchmark.return_5d >= 0 ? 'up' : 'down'}">${(benchmark.return_5d >= 0 ? '+' : '') + (benchmark.return_5d || 0).toFixed(2)}%</div><div class="xm-stat-label">5D</div></div>
+      <div class="xm-stat"><div class="xm-stat-val ${benchmark.return_30d >= 0 ? 'up' : 'down'}">${(benchmark.return_30d >= 0 ? '+' : '') + (benchmark.return_30d || 0).toFixed(2)}%</div><div class="xm-stat-label">30D</div></div>
+      <div class="xm-stat"><div class="xm-stat-val ${benchmark.return_60d >= 0 ? 'up' : 'down'}">${(benchmark.return_60d >= 0 ? '+' : '') + (benchmark.return_60d || 0).toFixed(2)}%</div><div class="xm-stat-label">60D</div></div>
+    </div>
+  </div>` : '';
+
+  // Top 10 table
+  const top10 = rankings.slice(0, 15);
+  const rowsHtml = top10.map((r, i) => {
+    const rsColor = r.composite_rs > 0 ? '#22c55e' : r.composite_rs < 0 ? '#ef4444' : '#a8a29e';
+    const flowColor = (r.flow_5d || 0) > 0 ? '#22c55e' : (r.flow_5d || 0) < 0 ? '#ef4444' : '#a8a29e';
+    return `<tr>
+      <td style="color:#a8a29e">${i + 1}</td>
+      <td><b>${r.ticker}</b></td>
+      <td>${r.name || ''}</td>
+      <td style="color:${rsColor};font-weight:600">${r.composite_rs >= 0 ? '+' : ''}${r.composite_rs.toFixed(2)}</td>
+      <td class="${(r.return_5d || 0) >= 0 ? 'up' : 'down'}">${(r.return_5d || 0) >= 0 ? '+' : ''}${(r.return_5d || 0).toFixed(2)}%</td>
+      <td class="${(r.return_30d || 0) >= 0 ? 'up' : 'down'}">${(r.return_30d || 0) >= 0 ? '+' : ''}${(r.return_30d || 0).toFixed(2)}%</td>
+      <td style="color:${flowColor}">${(r.flow_5d || 0) >= 0 ? '+' : ''}${(r.flow_5d || 0).toFixed(2)}</td>
+      <td>${(r.vol_surge || 0).toFixed(2)}x</td>
+    </tr>`;
+  }).join('');
+
+  const tableHtml = `<div class="xm-card" style="margin-top:12px;overflow-x:auto">
+    <div class="xm-card-title">板块综合强度排名 TOP 15</div>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px">
+      <thead><tr style="border-bottom:1px solid #334155;color:#a8a29e">
+        <th style="padding:6px 4px;text-align:left">#</th>
+        <th style="padding:6px 4px;text-align:left">Ticker</th>
+        <th style="padding:6px 4px;text-align:left">板块</th>
+        <th style="padding:6px 4px;text-align:left">综合RS</th>
+        <th style="padding:6px 4px;text-align:left">5D</th>
+        <th style="padding:6px 4px;text-align:left">30D</th>
+        <th style="padding:6px 4px;text-align:left">资金流</th>
+        <th style="padding:6px 4px;text-align:left">量能</th>
+      </tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>`;
+
+  document.getElementById('section-sector-strength').innerHTML =
+    bmHtml + tableHtml +
+    `<div class="ai-box" style="margin-top:16px">
+      <div class="ai-label">AI SECTOR STRENGTH ANALYSIS</div>
+      <div class="ai-text">${renderMd(aiSummary || 'AI 分析暂不可用')}</div>
+    </div>`;
+  renderLatex('section-sector-strength');
+}
+
 function escapeHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
@@ -733,7 +817,7 @@ function showEmpty() {
     <div class="empty-icon">&#x1f4ca;</div>
     <p>暂无已生成的周报，请联系管理员生成</p>
   </div>`;
-  ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
+  ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor', 'section-sector-strength'].forEach(id => {
     document.getElementById(id).innerHTML = '';
   });
   document.querySelector('.page-wrap').insertAdjacentHTML('beforeend', html);
@@ -765,7 +849,7 @@ async function loadReport(reportId) {
     const resp = await fetch(`/api/report/${reportId}`);
     const data = await resp.json();
     if (data.error) {
-      ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
+      ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor', 'section-sector-strength'].forEach(id => {
         document.getElementById(id).innerHTML = `<div class="loading-box">${data.error}</div>`;
       });
       return;
@@ -786,9 +870,10 @@ async function loadReport(reportId) {
     renderSector(data.sector);
     renderStocks(data.stocks);
     renderXMonitor(data.x_monitor || {});
+    renderSectorStrength(data.sector_strength || {});
   } catch (e) {
     console.error('loadReport error:', e);
-    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(id => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor', 'section-sector-strength'].forEach(id => {
       document.getElementById(id).innerHTML = '<div class="loading-box">加载失败</div>';
     });
   }
@@ -801,7 +886,7 @@ function onVersionChange() {
     // Remove any empty-box
     const empty = document.querySelector('.empty-box');
     if (empty) empty.remove();
-    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor'].forEach(s => {
+    ['section-market', 'section-capital', 'section-geopolitics', 'section-yield-curve', 'section-sector', 'section-stocks', 'section-x-monitor', 'section-sector-strength'].forEach(s => {
       document.getElementById(s).innerHTML = '<div class="loading-box">加载中...</div>';
     });
     loadReport(id);

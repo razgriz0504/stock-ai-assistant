@@ -19,6 +19,7 @@ from app.report.weekly_report import (
     DEFAULT_STOCKS_SYSTEM_PROMPT,
     DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
     DEFAULT_X_MONITOR_SYSTEM_PROMPT,
+    DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT,
 )
 from app.x_monitor.processor import DEFAULT_X_TWEET_SYSTEM_PROMPT
 
@@ -51,6 +52,7 @@ class PromptsUpdate(BaseModel):
     yield_curve_system_prompt: Optional[str] = None
     x_tweet_system_prompt: Optional[str] = None
     x_monitor_system_prompt: Optional[str] = None
+    sector_strength_system_prompt: Optional[str] = None
 
 
 class ScheduleUpdate(BaseModel):
@@ -253,6 +255,7 @@ async def get_prompts(db: Session = Depends(_get_db)):
         "yield_curve_system_prompt": getattr(config, "default_yield_curve_system_prompt", None) or DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
         "x_tweet_system_prompt": getattr(config, "default_x_tweet_system_prompt", None) or DEFAULT_X_TWEET_SYSTEM_PROMPT,
         "x_monitor_system_prompt": getattr(config, "default_x_monitor_system_prompt", None) or DEFAULT_X_MONITOR_SYSTEM_PROMPT,
+        "sector_strength_system_prompt": getattr(config, "default_sector_strength_system_prompt", None) or DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT,
         "defaults": {
             "market_system_prompt": DEFAULT_MARKET_SYSTEM_PROMPT,
             "capital_system_prompt": DEFAULT_CAPITAL_SYSTEM_PROMPT,
@@ -262,6 +265,7 @@ async def get_prompts(db: Session = Depends(_get_db)):
             "yield_curve_system_prompt": DEFAULT_YIELD_CURVE_SYSTEM_PROMPT,
             "x_tweet_system_prompt": DEFAULT_X_TWEET_SYSTEM_PROMPT,
             "x_monitor_system_prompt": DEFAULT_X_MONITOR_SYSTEM_PROMPT,
+            "sector_strength_system_prompt": DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT,
         },
     }
 
@@ -286,6 +290,8 @@ async def update_prompts(req: PromptsUpdate, db: Session = Depends(_get_db)):
         config.default_x_tweet_system_prompt = req.x_tweet_system_prompt
     if req.x_monitor_system_prompt is not None:
         config.default_x_monitor_system_prompt = req.x_monitor_system_prompt
+    if req.sector_strength_system_prompt is not None:
+        config.default_sector_strength_system_prompt = req.sector_strength_system_prompt
     db.commit()
     db.refresh(config)
     return {"success": True}
@@ -546,6 +552,12 @@ body { background: #faf9f5; color: #1a1a1a; font-family: 'DM Sans', -apple-syste
         <div class="prompt-preview" id="preview-x-monitor"></div>
       </div>
       <div class="form-group">
+        <label class="form-label">板块强度雷达 System Prompt</label>
+        <textarea class="form-textarea" id="prompt-sector-strength" oninput="previewPrompt('sector-strength')"></textarea>
+        <div class="form-hint">用于 AI 生成增强板块强度分析（周报 Section 08），基于 RS 排名和资金流数据撰写板块轮动分析。留空使用默认值。</div>
+        <div class="prompt-preview" id="preview-sector-strength"></div>
+      </div>
+      <div class="form-group">
         <label class="form-label">个股分析 System Prompt（预留）</label>
         <textarea class="form-textarea" id="prompt-stocks"></textarea>
         <div class="form-hint">预留字段，当前未使用</div>
@@ -751,8 +763,10 @@ async function loadPrompts() {
     if (xt) xt.value = data.x_tweet_system_prompt || '';
     const xm = document.getElementById('prompt-x-monitor');
     if (xm) xm.value = data.x_monitor_system_prompt || '';
+    const ss = document.getElementById('prompt-sector-strength');
+    if (ss) ss.value = data.sector_strength_system_prompt || '';
     // 渲染预览
-    ['market', 'capital', 'geopolitics', 'sector', 'yield-curve', 'x-tweet', 'x-monitor'].forEach(name => previewPrompt(name));
+    ['market', 'capital', 'geopolitics', 'sector', 'yield-curve', 'x-tweet', 'x-monitor', 'sector-strength'].forEach(name => previewPrompt(name));
   } catch (e) {
     console.error('loadPrompts error:', e);
   }
@@ -762,6 +776,7 @@ async function savePrompts() {
   try {
     const xtEl = document.getElementById('prompt-x-tweet');
     const xmEl = document.getElementById('prompt-x-monitor');
+    const ssEl = document.getElementById('prompt-sector-strength');
     const resp = await fetch('/api/admin/prompts', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -774,6 +789,7 @@ async function savePrompts() {
         stocks_system_prompt: document.getElementById('prompt-stocks').value,
         x_tweet_system_prompt: xtEl ? xtEl.value : undefined,
         x_monitor_system_prompt: xmEl ? xmEl.value : undefined,
+        sector_strength_system_prompt: ssEl ? ssEl.value : undefined,
       }),
     });
     const data = await resp.json();

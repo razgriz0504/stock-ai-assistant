@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.data.yfinance_provider import YFinanceProvider
 from app.analysis.stock_analyzer import StockAnalyzer
 from app.llm.client import chat, get_model
+from app.data.sector_strength import fetch_enhanced_sector_data
 from db.models import WeeklyReport, ReportConfig, XAccount, XTweet
 
 logger = logging.getLogger(__name__)
@@ -69,6 +70,26 @@ DEFAULT_CAPITAL_SYSTEM_PROMPT = ""  # 资金面分析：纯 LLM 联网搜索，�
 DEFAULT_GEOPOLITICS_SYSTEM_PROMPT = ""  # 国际局势分析：纯 LLM 联网搜索，无系统注入数据
 
 DEFAULT_STOCKS_SYSTEM_PROMPT = ""  # 预留：个股综合分析 prompt
+
+DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT = (
+    "你是一名专业的美股板块轮动策略师。基于系统提供的 41 只 ETF 多维数据，"
+    "撰写一份板块强度与轮动分析。\n\n"
+    "## 数据格式说明\n"
+    "JSON 对象包含：\n"
+    "- benchmark: SPY 基准表现（5d/15d/30d/60d 涨跌幅）\n"
+    "- sectors: 各 ETF 数据数组，每个包含：\n"
+    "  - symbol/name/category (spdr=一级行业, thematic=主题)\n"
+    "  - chg_5d/chg_15d/chg_30d/chg_60d: 多时间框架涨跌幅%\n"
+    "  - rs: {rs_5d, rs_15d, rs_30d, rs_60d, composite} 相对 SPY 超额收益\n"
+    "  - flow: {flow_5d, vol_surge, direction(inflow/outflow/neutral), accumulation} 资金流向代理\n"
+    "- rankings: 各维度 top10 排名\n\n"
+    "## 输出要求（Markdown，不超过 800 字）\n"
+    "1. **强势板块**：列出 RS 综合排名前 5 的板块，说明其上涨逻辑\n"
+    "2. **资金轮动信号**：分析资金流入/流出的板块，与价格趋势是否一致\n"
+    "3. **弱势与潜在反转**：RS 最弱的板块是否有资金底部吸筹迹象\n"
+    "4. **板块配置建议**：基于以上数据给出 2-3 个配置方向（不下具体交易指令）\n\n"
+    "请客观分析，结合联网搜索的最新信息验证数据中的趋势。"
+)
 
 DEFAULT_YIELD_CURVE_SYSTEM_PROMPT = (
     "你是一名宏观跨资产策略师，请基于系统提供的美国国债收益率曲线数据，结合\"牛熊×陡平\"四象限框架"
@@ -805,6 +826,22 @@ async def generate_ai_x_monitor_summary(
         return "AI 分析暂不可用"
 
 
+async def generate_ai_sector_strength_summary(
+    enhanced_data: dict, system_prompt: Optional[str] = None
+) -> str:
+    """调用 LLM 生成增强板块轮动分析，结合 RS + 资金流向"""
+    if not enhanced_data or not enhanced_data.get("sectors"):
+        return "板块强度数据暂不可用"
+
+    prompt = system_prompt or DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT
+    user_prompt = json.dumps(enhanced_data, ensure_ascii=False)
+    try:
+        return await chat(user_prompt, system_prompt=prompt, web_search=True)
+    except Exception as e:
+        logger.error(f"AI sector strength summary failed: {e}")
+        return "AI 分析暂不可用"
+
+
 # ─── 周报主入口 ───
 
 async def get_report_section_market() -> dict:
@@ -858,6 +895,17 @@ async def get_report_section_x_monitor(db: Session, system_prompt: Optional[str]
     except Exception as e:
         logger.error(f"X monitor section error: {e}", exc_info=True)
         return {"x_tweets_data": {}, "ai_x_monitor_summary": "数据加载失败"}
+
+
+async def get_report_section_sector_strength(system_prompt: Optional[str] = None) -> dict:
+    """获取增强板块强度 section 数据"""
+    try:
+        enhanced_data = await asyncio.to_thread(fetch_enhanced_sector_data, False)
+        ai_summary = await generate_ai_sector_strength_summary(enhanced_data, system_prompt=system_prompt)
+        return {"enhanced_sector_data": enhanced_data, "ai_sector_strength_summary": ai_summary}
+    except Exception as e:
+        logger.error(f"Sector strength section error: {e}", exc_info=True)
+        return {"enhanced_sector_data": {}, "ai_sector_strength_summary": "数据加载失败"}
 
 
 async def get_report_section_sector() -> dict:
@@ -927,8 +975,8 @@ def get_or_create_report_config(db: Session) -> ReportConfig:
     return config
 
 
-def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str, str, str, str]:
-    """从 ReportConfig 解析 prompt，空值回退到默认常量。返回 7-tuple。"""
+def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str, str, str, str, str]:
+    """从 ReportConfig 解析 prompt，空值回退到默认常量。返回 8-tuple。"""
     market_prompt = config.default_market_system_prompt or DEFAULT_MARKET_SYSTEM_PROMPT
     capital_prompt = config.default_capital_system_prompt or DEFAULT_CAPITAL_SYSTEM_PROMPT
     geopolitics_prompt = config.default_geopolitics_system_prompt or DEFAULT_GEOPOLITICS_SYSTEM_PROMPT
@@ -942,6 +990,10 @@ def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str, str, str
         getattr(config, "default_x_monitor_system_prompt", None)
         or DEFAULT_X_MONITOR_SYSTEM_PROMPT
     )
+    sector_strength_prompt = (
+        getattr(config, "default_sector_strength_system_prompt", None)
+        or DEFAULT_SECTOR_STRENGTH_SYSTEM_PROMPT
+    )
     return (
         market_prompt,
         capital_prompt,
@@ -950,6 +1002,7 @@ def _resolve_prompts(config: ReportConfig) -> tuple[str, str, str, str, str, str
         stocks_prompt,
         yield_curve_prompt,
         x_monitor_prompt,
+        sector_strength_prompt,
     )
 
 
@@ -983,6 +1036,7 @@ async def generate_full_report(
         stocks_prompt,
         yield_curve_prompt,
         x_monitor_prompt,
+        sector_strength_prompt,
     ) = _resolve_prompts(config)
     model_name = get_model()
 
@@ -1000,6 +1054,7 @@ async def generate_full_report(
         stocks_system_prompt=stocks_prompt,
         yield_curve_system_prompt=yield_curve_prompt,
         x_monitor_system_prompt=x_monitor_prompt,
+        sector_strength_system_prompt=sector_strength_prompt,
         watchlist_used=json.dumps(watchlist),
     )
     db.add(report)
@@ -1009,12 +1064,13 @@ async def generate_full_report(
 
     try:
         # 2. 并行获取数据 + AI 分析
-        index_data, sector_data, stocks_data, curve_data, x_data = await asyncio.gather(
+        index_data, sector_data, stocks_data, curve_data, x_data, enhanced_sector_data = await asyncio.gather(
             asyncio.to_thread(fetch_index_data),
             asyncio.to_thread(fetch_sector_data),
             get_report_section_stocks(watchlist),
             asyncio.to_thread(fetch_yield_curve_data),
             asyncio.to_thread(fetch_x_tweets_data, db, 7),
+            asyncio.to_thread(fetch_enhanced_sector_data, False),
         )
 
         # AI 分析（依赖上面的数据 + 纯 LLM 模块）
@@ -1025,6 +1081,7 @@ async def generate_full_report(
             ai_sector_summary,
             ai_yield_curve_summary,
             ai_x_monitor_summary,
+            ai_sector_strength_summary,
         ) = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
             generate_ai_capital_summary(system_prompt=capital_prompt),
@@ -1032,6 +1089,7 @@ async def generate_full_report(
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
             generate_ai_yield_curve_summary(curve_data, system_prompt=yield_curve_prompt),
             generate_ai_x_monitor_summary(x_data, system_prompt=x_monitor_prompt),
+            generate_ai_sector_strength_summary(enhanced_sector_data, system_prompt=sector_strength_prompt),
         )
 
         # 3. 序列化 JSON 并更新 DB
@@ -1047,6 +1105,8 @@ async def generate_full_report(
         report.ai_sector_summary = ai_sector_summary
         report.ai_yield_curve_summary = ai_yield_curve_summary
         report.ai_x_monitor_summary = ai_x_monitor_summary
+        report.enhanced_sector_data = json.dumps(enhanced_sector_data, ensure_ascii=False)
+        report.ai_sector_strength_summary = ai_sector_strength_summary
         report.status = "completed"
         db.commit()
 

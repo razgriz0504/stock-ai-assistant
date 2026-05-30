@@ -16,6 +16,7 @@ from app.api.scoring_page import router as scoring_router
 from app.api.report_admin_page import router as report_admin_router
 from app.api.screener_page import router as screener_router
 from app.api.x_monitor_page import router as x_monitor_router
+from app.api.sector_strength_page import router as sector_strength_router
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,
@@ -78,6 +79,7 @@ app.include_router(scoring_router)
 app.include_router(report_admin_router)
 app.include_router(screener_router)
 app.include_router(x_monitor_router)
+app.include_router(sector_strength_router)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -136,6 +138,11 @@ h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
         <div class="card-icon">&#x1f50d;</div>
         <div class="card-title">Stock Screener</div>
         <div class="card-desc">Scan S&P 500 + Nasdaq 100 with technical & fundamental filters</div>
+    </a>
+    <a class="card" href="/sector-strength">
+        <div class="card-icon">&#x1f4e1;</div>
+        <div class="card-title">板块强度雷达</div>
+        <div class="card-desc">41 ETF relative strength, fund flow signals & sector rotation</div>
     </a>
     <a class="card" href="/x-monitor">
         <div class="card-icon">&#x1f426;</div>

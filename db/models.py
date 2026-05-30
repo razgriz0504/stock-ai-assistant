@@ -121,6 +121,10 @@ class WeeklyReport(Base):
     stocks_system_prompt = Column(Text, default="")     # 预留：个股分析 prompt
     yield_curve_system_prompt = Column(Text, default="") # 生成时使用的国债收益率曲线分析 prompt
     x_monitor_system_prompt = Column(Text, default="")  # 生成时使用的 X 舆情综述 prompt
+    sector_strength_system_prompt = Column(Text, default="")  # 生成时使用的板块强度分析 prompt
+    # --- 增强板块数据 ---
+    enhanced_sector_data = Column(Text, default="")      # JSON: 增强板块强度数据快照
+    ai_sector_strength_summary = Column(Text, default="") # AI板块轮动分析
     # --- 元数据 ---
     watchlist_used = Column(Text, default="")           # JSON: 生成时使用的 watchlist
     error_message = Column(Text, default="")            # 失败时的错误信息
@@ -151,6 +155,8 @@ class ReportConfig(Base):
     x_monitor_interval_hours = Column(Integer, default=4)
     default_x_tweet_system_prompt = Column(Text, default="")     # 单条推文处理 prompt
     default_x_monitor_system_prompt = Column(Text, default="")   # 周报 X 综述 prompt
+    # --- 板块强度 ---
+    default_sector_strength_system_prompt = Column(Text, default="")  # 增强板块分析 prompt
     # --- 元数据 ---
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -297,6 +303,11 @@ def _migrate_missing_columns():
         ("report_config", "x_monitor_interval_hours", "INTEGER DEFAULT 4"),
         ("report_config", "default_x_tweet_system_prompt", "TEXT DEFAULT ''"),
         ("report_config", "default_x_monitor_system_prompt", "TEXT DEFAULT ''"),
+        # 板块强度雷达相关迁移
+        ("weekly_reports", "enhanced_sector_data", "TEXT DEFAULT ''"),
+        ("weekly_reports", "ai_sector_strength_summary", "TEXT DEFAULT ''"),
+        ("weekly_reports", "sector_strength_system_prompt", "TEXT DEFAULT ''"),
+        ("report_config", "default_sector_strength_system_prompt", "TEXT DEFAULT ''"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
