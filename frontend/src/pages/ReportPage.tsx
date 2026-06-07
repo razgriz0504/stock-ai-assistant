@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { api } from '@/api/client'
 import { Button, Badge } from '@/components/ui'
 
@@ -229,10 +232,10 @@ function AiSummary({ text }: { text?: string }) {
     <div className="relative pl-7 py-5 px-5 bg-white border border-cream-300 rounded-lg">
       <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-copper rounded-l-lg" />
       <div className="font-mono text-[10px] tracking-[1.5px] uppercase text-copper mb-3">AI Analysis</div>
-      <div className="text-sm leading-[1.8] text-gray-700 prose prose-sm max-w-none">
-        {text.split('\n').map((line, i) => (
-          <p key={i} className={line.trim() ? 'mb-2' : 'mb-0'}>{line || '\u00A0'}</p>
-        ))}
+      <div className="report-markdown text-sm leading-[1.8] text-gray-700">
+        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+          {text}
+        </ReactMarkdown>
       </div>
     </div>
   )

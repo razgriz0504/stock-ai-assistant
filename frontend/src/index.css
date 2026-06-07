@@ -59,4 +59,63 @@
   .card-base:hover {
     @apply shadow-card-hover;
   }
+
+  /* Report Markdown Styles */
+  .report-markdown h1 {
+    @apply font-heading text-xl font-bold mt-6 mb-3 text-gray-900;
+  }
+  .report-markdown h2 {
+    @apply font-heading text-lg font-bold mt-5 mb-2 text-gray-900;
+  }
+  .report-markdown h3 {
+    @apply font-heading text-base font-semibold mt-4 mb-2 text-gray-800 border-b border-cream-200 pb-1;
+  }
+  .report-markdown h4 {
+    @apply font-heading text-sm font-semibold mt-3 mb-1.5 text-gray-700;
+  }
+  .report-markdown p {
+    @apply mb-3 leading-[1.85];
+  }
+  .report-markdown strong {
+    @apply font-semibold text-gray-900;
+  }
+  .report-markdown em {
+    @apply italic text-gray-600;
+  }
+  .report-markdown ul {
+    @apply ml-4 mb-3 list-disc space-y-1;
+  }
+  .report-markdown ol {
+    @apply ml-4 mb-3 list-decimal space-y-1;
+  }
+  .report-markdown li {
+    @apply leading-[1.7];
+  }
+  .report-markdown blockquote {
+    @apply border-l-[3px] border-copper/40 pl-4 my-3 italic text-gray-600;
+  }
+  .report-markdown code {
+    @apply font-mono text-xs bg-cream-100 px-1.5 py-0.5 rounded;
+  }
+  .report-markdown pre {
+    @apply bg-cream-50 border border-cream-200 rounded-md p-4 mb-3 overflow-x-auto;
+  }
+  .report-markdown pre code {
+    @apply bg-transparent p-0;
+  }
+  .report-markdown table {
+    @apply w-full text-sm border-collapse mb-3;
+  }
+  .report-markdown th {
+    @apply text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500 border-b border-cream-300 bg-cream-50;
+  }
+  .report-markdown td {
+    @apply px-3 py-2 border-b border-cream-200 text-xs;
+  }
+  .report-markdown hr {
+    @apply my-5 border-cream-200;
+  }
+  .report-markdown a {
+    @apply text-copper underline underline-offset-2;
+  }
 }
