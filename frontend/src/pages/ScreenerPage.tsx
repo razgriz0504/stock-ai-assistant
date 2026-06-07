@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Card, CardHeader, Button, Badge, Input } from '@/components/ui'
 import { Tabs } from '@/components/ui'
+import { api } from '@/api/client'
 import { useScreenerStore, type ScreenerPreset } from '@/stores/screenerStore'
 
 export default function ScreenerPage() {
@@ -377,8 +378,7 @@ function ScheduleTab() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { api: apiClient } = await import('@/api/client')
-        const res = await apiClient.get('/api/screener/schedule')
+        const res = await api.get('/api/screener/schedule')
         setForm(res.data)
       } catch { /* ignore */ }
     }
@@ -388,8 +388,7 @@ function ScheduleTab() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      const { api: apiClient } = await import('@/api/client')
-      await apiClient.post('/api/screener/schedule', form)
+      await api.post('/api/screener/schedule', form)
     } catch { /* ignore */ }
     setSaving(false)
   }

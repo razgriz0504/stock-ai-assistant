@@ -14,7 +14,9 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script_stop: true
           script: |
+            set -e
             cd /opt/stock-ai-assistant
             git pull origin main
 
@@ -24,7 +26,7 @@ jobs:
 
             # Frontend build
             cd frontend
-            npm install --production=false
+            npm install --legacy-peer-deps
             npm run build
             cd ..
 
