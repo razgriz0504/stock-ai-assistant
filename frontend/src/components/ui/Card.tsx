@@ -21,13 +21,14 @@ export function Card({ children, className = '', hover = false }: CardProps) {
   )
 }
 
-interface CardHeaderProps {
+export interface CardHeaderProps {
   title: string
+  description?: string
   action?: ReactNode
   label?: string
 }
 
-export function CardHeader({ title, action, label }: CardHeaderProps) {
+export function CardHeader({ title, description, action, label }: CardHeaderProps) {
   return (
     <div className="flex items-center justify-between mb-5">
       <div>
@@ -37,6 +38,9 @@ export function CardHeader({ title, action, label }: CardHeaderProps) {
           </span>
         )}
         <h3 className="font-heading text-lg font-semibold">{title}</h3>
+        {description && (
+          <p className="text-xs text-gray-500 mt-1">{description}</p>
+        )}
       </div>
       {action && <div>{action}</div>}
     </div>

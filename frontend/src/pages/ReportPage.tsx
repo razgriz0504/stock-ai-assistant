@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
-import { Card, CardHeader, Button, Badge } from '@/components/ui'
+import { Button, Badge } from '@/components/ui'
 
 interface ReportVersion {
   id: number

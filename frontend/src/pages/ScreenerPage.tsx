@@ -211,8 +211,8 @@ function ResultsTab() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   const sorted = [...results].sort((a, b) => {
-    const aVal = (a as Record<string, unknown>)[sortBy] as number || 0
-    const bVal = (b as Record<string, unknown>)[sortBy] as number || 0
+    const aVal = (a as unknown as Record<string, unknown>)[sortBy] as number || 0
+    const bVal = (b as unknown as Record<string, unknown>)[sortBy] as number || 0
     return sortOrder === 'desc' ? bVal - aVal : aVal - bVal
   })
 

@@ -5,14 +5,25 @@ interface Tab {
   label: string
 }
 
-interface TabsProps {
+export interface TabsProps {
   tabs: Tab[]
   defaultTab?: string
-  children: (activeTab: string) => ReactNode
+  activeTab?: string
+  onChange?: (tab: string) => void
+  children?: (activeTab: string) => ReactNode
 }
 
-export function Tabs({ tabs, defaultTab, children }: TabsProps) {
-  const [active, setActive] = useState(defaultTab || tabs[0]?.id || '')
+export function Tabs({ tabs, defaultTab, activeTab, onChange, children }: TabsProps) {
+  const [internalActive, setInternalActive] = useState(defaultTab || tabs[0]?.id || '')
+  const current = activeTab ?? internalActive
+
+  const handleClick = (id: string) => {
+    if (onChange) {
+      onChange(id)
+    } else {
+      setInternalActive(id)
+    }
+  }
 
   return (
     <div>
@@ -20,13 +31,13 @@ export function Tabs({ tabs, defaultTab, children }: TabsProps) {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActive(tab.id)}
+            onClick={() => handleClick(tab.id)}
             className={`
               font-mono text-xs tracking-[1px] uppercase
               px-5 py-3 cursor-pointer border-b-2 -mb-[2px]
               transition-all duration-150
               ${
-                active === tab.id
+                current === tab.id
                   ? 'text-copper border-copper'
                   : 'text-gray-500 border-transparent hover:text-gray-900'
               }
@@ -36,7 +47,7 @@ export function Tabs({ tabs, defaultTab, children }: TabsProps) {
           </button>
         ))}
       </div>
-      {children(active)}
+      {children && children(current)}
     </div>
   )
 }
