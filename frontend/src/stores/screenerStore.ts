@@ -113,8 +113,8 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
 
       const res = await api.post('/api/screener/run', {
         filters,
-        custom_code: customCode || null,
-        preset_id: activePresetId,
+        custom_code: customCode || '',
+        preset_id: activePresetId || null,
       })
       set({ status: 'running', runId: res.data.run_id })
     } catch (err: unknown) {
@@ -176,7 +176,7 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
         id: activePresetId,
         name,
         filters_json: filtersJson,
-        custom_code: customCode || null,
+        custom_code: customCode || '',
         is_default: isDefault,
       })
       await get().fetchPresets()
