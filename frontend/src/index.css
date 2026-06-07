@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-cream-bg: #faf9f5;
+    --color-card-bg: #ffffff;
+    --color-border: #e8e4de;
+    --color-border-hover: #c9774a;
+    --color-text-primary: #1a1a1a;
+    --color-text-secondary: #44403c;
+    --color-text-muted: #6b6560;
+    --color-text-faint: #a8a29e;
+    --color-copper: #c9774a;
+    --color-copper-dark: #b5683e;
+    --color-sidebar: #1e2530;
+    --color-sidebar-light: #2a3340;
+    --color-success: #2d6a4f;
+    --color-danger: #b91c1c;
+    --color-warning: #b45309;
+  }
+
+  body {
+    background: var(--color-cream-bg);
+    color: var(--color-text-primary);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d4cfc7;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #a8a29e;
+  }
+}
+
+@layer components {
+  .page-title {
+    @apply font-heading text-3xl font-bold;
+  }
+
+  .section-label {
+    @apply font-mono text-xs tracking-[3px] uppercase text-copper;
+  }
+
+  .card-base {
+    @apply bg-white border border-cream-300 rounded-lg shadow-card transition-shadow;
+  }
+
+  .card-base:hover {
+    @apply shadow-card-hover;
+  }
+}
