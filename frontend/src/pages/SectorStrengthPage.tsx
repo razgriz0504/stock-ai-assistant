@@ -7,19 +7,20 @@ interface SectorItem {
   symbol: string
   name: string
   category: string
-  price: number
-  change_1d: number
-  change_1w: number
-  change_1m: number
-  rs_score: number
-  flow_signal: string
-  volume_ratio: number
+  current: number
+  chg_5d: number | null
+  chg_15d: number | null
+  chg_30d: number | null
+  chg_60d: number | null
+  vol_ratio: number
+  rs: { composite: number | null; rs_5d: number | null; rs_15d: number | null; rs_30d: number | null; rs_60d: number | null }
+  flow: { direction: string; flow_5d: number | null; vol_surge: number | null; accumulation: number | null }
 }
 
-type SortKey = 'rs_score' | 'change_1d' | 'change_1w' | 'change_1m' | 'volume_ratio'
+type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio'
 
 export default function SectorStrengthPage() {
-  const [sortBy, setSortBy] = useState<SortKey>('rs_score')
+  const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
 
   const { data, isLoading, refetch, isFetching } = useQuery({
@@ -32,11 +33,20 @@ export default function SectorStrengthPage() {
   })
 
   const sectors: SectorItem[] = data?.sectors || []
-  const updatedAt = data?.updated_at || ''
+  const updatedAt = data?.generated_at || ''
+
+  const getSortValue = (s: SectorItem, key: SortKey): number => {
+    if (key === 'rs_composite') return s.rs?.composite ?? -999
+    if (key === 'chg_5d') return s.chg_5d ?? -999
+    if (key === 'chg_15d') return s.chg_15d ?? -999
+    if (key === 'chg_30d') return s.chg_30d ?? -999
+    if (key === 'vol_ratio') return s.vol_ratio ?? 0
+    return 0
+  }
 
   const filtered = sectors
     .filter(s => !filterCat || s.category === filterCat)
-    .sort((a, b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0))
+    .sort((a, b) => getSortValue(b, sortBy) - getSortValue(a, sortBy))
 
   const categories = [...new Set(sectors.map(s => s.category))].filter(Boolean)
 
@@ -95,11 +105,11 @@ export default function SectorStrengthPage() {
           onChange={e => setSortBy(e.target.value as SortKey)}
           className="ml-auto px-3 py-1.5 text-xs font-mono border border-cream-300 rounded-md bg-white focus:outline-none focus:border-copper"
         >
-          <option value="rs_score">RS 评分</option>
-          <option value="change_1d">日涨跌</option>
-          <option value="change_1w">周涨跌</option>
-          <option value="change_1m">月涨跌</option>
-          <option value="volume_ratio">量比</option>
+          <option value="rs_composite">RS 评分</option>
+          <option value="chg_5d">5日涨跌</option>
+          <option value="chg_15d">15日涨跌</option>
+          <option value="chg_30d">30日涨跌</option>
+          <option value="vol_ratio">量比</option>
         </select>
       </div>
 
@@ -118,9 +128,9 @@ export default function SectorStrengthPage() {
                   <th className="text-left px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">ETF</th>
                   <th className="text-left px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">分类</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">价格</th>
-                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">日涨跌</th>
-                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">周涨跌</th>
-                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">月涨跌</th>
+                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">5日</th>
+                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">15日</th>
+                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">30日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">RS</th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">资金流向</th>
                 </tr>
@@ -136,20 +146,20 @@ export default function SectorStrengthPage() {
                     <td className="px-4 py-3">
                       <Badge>{s.category}</Badge>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-xs">${s.price?.toFixed(2)}</td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.change_1d)}`}>
-                      {fmtPct(s.change_1d)}
+                    <td className="px-4 py-3 text-right font-mono text-xs">${s.current?.toFixed(2)}</td>
+                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_5d)}`}>
+                      {fmtPct(s.chg_5d)}
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.change_1w)}`}>
-                      {fmtPct(s.change_1w)}
+                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_15d)}`}>
+                      {fmtPct(s.chg_15d)}
                     </td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.change_1m)}`}>
-                      {fmtPct(s.change_1m)}
+                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_30d)}`}>
+                      {fmtPct(s.chg_30d)}
                     </td>
-                    <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs_score?.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs?.composite?.toFixed(1) ?? '-'}</td>
                     <td className="px-4 py-3 text-center">
-                      <Badge variant={s.flow_signal === 'inflow' ? 'success' : s.flow_signal === 'outflow' ? 'danger' : 'default'}>
-                        {s.flow_signal === 'inflow' ? '流入' : s.flow_signal === 'outflow' ? '流出' : '中性'}
+                      <Badge variant={s.flow?.direction === 'inflow' ? 'success' : s.flow?.direction === 'outflow' ? 'danger' : 'default'}>
+                        {s.flow?.direction === 'inflow' ? '流入' : s.flow?.direction === 'outflow' ? '流出' : '中性'}
                       </Badge>
                     </td>
                   </tr>
