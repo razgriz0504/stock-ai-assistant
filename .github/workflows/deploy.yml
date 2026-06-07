@@ -18,6 +18,7 @@ jobs:
           script: |
             set -e
             cd /opt/stock-ai-assistant
+            git checkout -- .
             git pull origin main
 
             # Backend

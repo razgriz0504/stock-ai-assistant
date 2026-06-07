@@ -141,7 +141,7 @@ function ReportsTab({
   onDelete: (id: number) => void
   isGenerating: boolean
 }) {
-  const statusColor = (s: string) => {
+  const statusColor = (s: string): 'success' | 'danger' | 'warning' | 'default' => {
     if (s === 'completed') return 'success'
     if (s === 'failed') return 'danger'
     if (s === 'running') return 'warning'

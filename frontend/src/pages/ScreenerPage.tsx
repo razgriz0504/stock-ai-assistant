@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Card, CardHeader, Button, Badge, Input } from '@/components/ui'
+import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
 import { api } from '@/api/client'
 import { useScreenerStore, type ScreenerPreset } from '@/stores/screenerStore'
@@ -182,7 +182,7 @@ function RunTab() {
   const setParam = (filterKey: string, paramId: string, value: unknown) => {
     setFilterState(prev => ({
       ...prev,
-      [filterKey]: { ...prev[filterKey], [paramId]: value },
+      [filterKey]: { ...(prev[filterKey] || {}), [paramId]: value },
     }))
   }
 
@@ -542,7 +542,7 @@ function HistoryTab() {
   const { runs, fetchRuns } = useScreenerStore()
   useEffect(() => { fetchRuns() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const statusColor = (s: string) => {
+  const statusColor = (s: string): 'success' | 'danger' | 'warning' | 'default' => {
     if (s === 'completed') return 'success'
     if (s === 'failed') return 'danger'
     if (s === 'running') return 'warning'
