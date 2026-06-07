@@ -3,6 +3,7 @@ import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
 import { api } from '@/api/client'
 import { useScreenerStore, type ScreenerPreset } from '@/stores/screenerStore'
+import { getCnName, getCnSector } from '@/data/cnNames'
 
 // ── Filter definitions ──
 interface FilterDef {
@@ -508,8 +509,8 @@ function ResultsTab() {
               {sorted.map((r) => (
                 <tr key={r.symbol} className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
                   <td className="px-3 py-2 font-mono font-semibold text-xs">{r.symbol}</td>
-                  <td className="px-3 py-2 text-xs text-gray-600">{r.name}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{r.sector}</td>
+                  <td className="px-3 py-2 text-xs text-gray-600">{getCnName(r.symbol, r.name)}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
                   <td className="px-3 py-2 text-right">
                     <Badge variant={r.score >= 70 ? 'success' : r.score >= 40 ? 'warning' : 'danger'}>
                       {r.score?.toFixed(1)}
