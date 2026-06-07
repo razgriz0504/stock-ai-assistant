@@ -141,7 +141,7 @@ export default function ScreenerPage() {
       <div className="mt-6">
         {activeTab === 'run' && <RunTab />}
         {activeTab === 'results' && <ResultsTab />}
-        {activeTab === 'history' && <HistoryTab />}
+        {activeTab === 'history' && <HistoryTab onViewResults={() => setActiveTab('results')} />}
         {activeTab === 'schedule' && <ScheduleTab />}
       </div>
     </div>
@@ -538,8 +538,8 @@ function ResultsTab() {
 // ═══════════════════════════════════════════════════════════════
 // History Tab
 // ═══════════════════════════════════════════════════════════════
-function HistoryTab() {
-  const { runs, fetchRuns } = useScreenerStore()
+function HistoryTab({ onViewResults }: { onViewResults: () => void }) {
+  const { runs, fetchRuns, loadRunResults } = useScreenerStore()
   useEffect(() => { fetchRuns() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const statusColor = (s: string): 'success' | 'danger' | 'warning' | 'default' => {
@@ -549,9 +549,15 @@ function HistoryTab() {
     return 'default'
   }
 
+  const handleRowClick = async (runId: number, status: string) => {
+    if (status !== 'completed') return
+    await loadRunResults(runId)
+    onViewResults()
+  }
+
   return (
     <Card>
-      <CardHeader title="执行历史" description="最近 20 次选股记录" />
+      <CardHeader title="执行历史" description="点击已完成的记录查看结果" />
       <div className="mt-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -566,7 +572,15 @@ function HistoryTab() {
           </thead>
           <tbody>
             {runs.map((r) => (
-              <tr key={r.id} className="border-b border-cream-200">
+              <tr
+                key={r.id}
+                onClick={() => handleRowClick(r.id, r.status)}
+                className={`border-b border-cream-200 transition-colors ${
+                  r.status === 'completed'
+                    ? 'cursor-pointer hover:bg-orange-50'
+                    : ''
+                }`}
+              >
                 <td className="px-3 py-2 font-mono font-semibold text-xs">v{r.version}</td>
                 <td className="px-3 py-2"><Badge variant={statusColor(r.status)}>{r.status}</Badge></td>
                 <td className="px-3 py-2 text-xs text-gray-500">{r.trigger === 'manual' ? '手动' : '定时'}</td>

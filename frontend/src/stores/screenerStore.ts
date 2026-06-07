@@ -73,6 +73,7 @@ interface ScreenerState {
   startRun: () => Promise<void>
   pollStatus: () => Promise<boolean>
   fetchResults: () => Promise<void>
+  loadRunResults: (runId: number) => Promise<void>
   fetchRuns: () => Promise<void>
   fetchPresets: () => Promise<void>
   savePreset: (name: string, isDefault?: boolean) => Promise<void>
@@ -151,6 +152,14 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
     if (!runId) return
     try {
       const res = await api.get(`/api/screener/results/${runId}`)
+      set({ results: res.data.results, totalPassed: res.data.total_passed })
+    } catch { /* ignore */ }
+  },
+
+  loadRunResults: async (id: number) => {
+    set({ runId: id, status: 'success', results: [], totalPassed: 0 })
+    try {
+      const res = await api.get(`/api/screener/results/${id}`)
       set({ results: res.data.results, totalPassed: res.data.total_passed })
     } catch { /* ignore */ }
   },
