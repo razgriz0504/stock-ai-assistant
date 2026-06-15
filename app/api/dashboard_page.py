@@ -49,8 +49,19 @@ def _watchlist_block(db) -> dict[str, Any]:
             .filter(UserPreference.feishu_user_id == WEB_USER_ID)
             .first()
         )
-        stocks = json.loads(pref.watchlist) if pref and pref.watchlist else []
-        return {"count": len(stocks), "stocks": stocks[:30]}
+        raw = json.loads(pref.watchlist) if pref and pref.watchlist else []
+        # 兼容旧(字符串) + 新(对象) 两种格式
+        symbols: list[str] = []
+        for x in raw if isinstance(raw, list) else []:
+            if isinstance(x, str):
+                s = x.strip().upper()
+            elif isinstance(x, dict):
+                s = str(x.get("symbol", "")).strip().upper()
+            else:
+                s = ""
+            if s:
+                symbols.append(s)
+        return {"count": len(symbols), "stocks": symbols[:30]}
     except Exception as e:
         logger.warning(f"[dashboard] watchlist block failed: {e}")
         return {"count": 0, "stocks": []}

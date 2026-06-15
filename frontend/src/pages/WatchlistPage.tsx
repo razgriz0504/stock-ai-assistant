@@ -1,63 +1,87 @@
-import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/api/client'
-import { Card, CardHeader, Button, Input } from '@/components/ui'
+import { useState, useEffect, useMemo } from 'react'
+import { Card, CardHeader, Button, Input, Badge } from '@/components/ui'
+import { useWatchlistStore, describeSource, type WatchlistItem } from '@/stores/watchlistStore'
+import { getCnName } from '@/data/cnNames'
+
+function formatAddedAt(iso: string): string {
+  if (!iso) return '-'
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '-'
+    const now = Date.now()
+    const diffMs = now - d.getTime()
+    const day = 24 * 3600 * 1000
+    if (diffMs < 60 * 1000) return '刚刚'
+    if (diffMs < 3600 * 1000) return `${Math.floor(diffMs / 60000)} 分钟前`
+    if (diffMs < day) return `${Math.floor(diffMs / 3600000)} 小时前`
+    if (diffMs < 7 * day) return `${Math.floor(diffMs / day)} 天前`
+    return d.toLocaleDateString('zh-CN')
+  } catch {
+    return '-'
+  }
+}
 
 export default function WatchlistPage() {
-  const queryClient = useQueryClient()
+  const { items, loading, error, fetch: fetchList, add, remove } = useWatchlistStore()
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['watchlist'],
-    queryFn: async () => {
-      const res = await api.get('/api/watchlist')
-      return res.data.stocks as string[]
-    },
-  })
-
-  const stocks = data || []
-
-  const mutation = useMutation({
-    mutationFn: async (newStocks: string[]) => {
-      const res = await api.post('/api/watchlist', { stocks: newStocks })
-      return res.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist'] })
-    },
-  })
-
-  const addStocks = () => {
-    if (!input.trim()) return
-    const newOnes = input.split(/[,，\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-    const added: string[] = []
-    const combined = [...stocks]
-    for (const s of newOnes) {
-      if (!combined.includes(s)) {
-        combined.push(s)
-        added.push(s)
-      }
-    }
-    setInput('')
-    if (added.length > 0) {
-      mutation.mutate(combined)
-      showStatus(`已添加: ${added.join(', ')}`, 'ok')
-    } else {
-      showStatus('股票已在列表中', 'err')
-    }
-  }
-
-  const removeStock = (symbol: string) => {
-    const updated = stocks.filter(s => s !== symbol)
-    mutation.mutate(updated)
-    showStatus(`已移除: ${symbol}`, 'ok')
-  }
+  useEffect(() => { fetchList() }, [fetchList])
 
   const showStatus = (msg: string, type: 'ok' | 'err') => {
     setStatus({ msg, type })
     setTimeout(() => setStatus(null), 3000)
   }
+
+  const handleAdd = async () => {
+    if (!input.trim()) return
+    const newOnes = input.split(/[,，\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+    if (newOnes.length === 0) return
+    let added = 0
+    let skipped = 0
+    for (const sym of newOnes) {
+      try {
+        const { alreadyExists } = await add(sym, 'manual')
+        if (alreadyExists) skipped++
+        else added++
+      } catch {
+        skipped++
+      }
+    }
+    setInput('')
+    if (added > 0) showStatus(`已添加 ${added} 只${skipped > 0 ? `,${skipped} 只已存在` : ''}`, 'ok')
+    else showStatus('股票已在列表中', 'err')
+  }
+
+  const handleRemove = async (symbol: string) => {
+    try {
+      await remove(symbol)
+      showStatus(`已移除: ${symbol}`, 'ok')
+    } catch {
+      showStatus('移除失败', 'err')
+    }
+  }
+
+  // 按来源分组
+  const groups = useMemo(() => {
+    const map = new Map<string, { label: string; group: string; items: WatchlistItem[] }>()
+    for (const it of items) {
+      const desc = describeSource(it.source)
+      const key = it.source || 'manual'
+      if (!map.has(key)) map.set(key, { label: desc.label, group: desc.group, items: [] })
+      map.get(key)!.items.push(it)
+    }
+    // 排序: 手动添加 → 选股器(按 label) → 周报 → 其他
+    const order: Record<string, number> = { manual: 0, screener: 1, report: 2, dashboard: 3, other: 4 }
+    return Array.from(map.entries())
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => {
+        const oa = order[a.group] ?? 99
+        const ob = order[b.group] ?? 99
+        if (oa !== ob) return oa - ob
+        return a.label.localeCompare(b.label)
+      })
+  }, [items])
 
   return (
     <div>
@@ -67,59 +91,76 @@ export default function WatchlistPage() {
           Watchlist
         </span>
         <h1 className="page-title">关注<span className="text-copper">列表</span></h1>
-        <p className="text-sm text-gray-500 mt-2">管理投研周报评分的股票池</p>
+        <p className="text-sm text-gray-500 mt-2">按来源分组管理关注股票（手动 / 选股器 / 周报推荐）</p>
       </div>
 
-      <Card>
-        <CardHeader title="股票管理" label={stocks.length > 0 ? `${stocks.length} 只股票` : undefined} />
+      <Card className="mb-6">
+        <CardHeader title="添加股票" label={items.length > 0 ? `共 ${items.length} 只` : undefined} />
 
-        {/* Input */}
-        <div className="flex gap-3 mb-6">
+        <div className="flex gap-3 mb-4">
           <div className="flex-1">
             <Input
               placeholder="输入股票代码，多个用逗号分隔（如 AAPL, TSLA, NVDA）"
               value={input}
               onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && addStocks()}
+              onKeyDown={e => e.key === 'Enter' && handleAdd()}
             />
           </div>
-          <Button variant="primary" onClick={addStocks}>
-            添加
-          </Button>
+          <Button variant="primary" onClick={handleAdd}>添加</Button>
         </div>
 
-        {/* Status */}
         {status && (
-          <p className={`text-xs mb-4 ${status.type === 'ok' ? 'text-success' : 'text-danger'}`}>
+          <p className={`text-xs ${status.type === 'ok' ? 'text-success' : 'text-danger'}`}>
             {status.msg}
           </p>
         )}
-
-        {/* List */}
-        {isLoading ? (
-          <div className="text-center py-8 text-cream-500 text-sm">加载中...</div>
-        ) : stocks.length === 0 ? (
-          <div className="text-center py-8 text-cream-500 text-sm">暂无关注股票，请在上方添加</div>
-        ) : (
-          <div className="space-y-2">
-            {stocks.map((symbol) => (
-              <div
-                key={symbol}
-                className="flex items-center justify-between px-4 py-3 bg-cream-100 border border-cream-300 rounded-md group"
-              >
-                <span className="font-mono font-semibold text-sm tracking-wide">{symbol}</span>
-                <button
-                  onClick={() => removeStock(symbol)}
-                  className="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none"
-                  title="删除"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-          </div>
+        {error && (
+          <p className="text-xs text-danger">{error}</p>
         )}
       </Card>
+
+      {loading ? (
+        <Card><div className="text-center py-8 text-cream-500 text-sm">加载中...</div></Card>
+      ) : items.length === 0 ? (
+        <Card><div className="text-center py-8 text-cream-500 text-sm">暂无关注股票，请在上方添加，或在选股器中点击 ☆ 加入</div></Card>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g) => (
+            <Card key={g.key}>
+              <CardHeader
+                title={g.label}
+                label={`${g.items.length} 只`}
+              />
+              <div className="space-y-2">
+                {g.items.map((it) => (
+                  <div
+                    key={it.symbol}
+                    className="flex items-center justify-between px-4 py-3 bg-cream-100 border border-cream-300 rounded-md group hover:border-copper/40 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className="font-mono font-semibold text-sm tracking-wide">{it.symbol}</span>
+                      <span className="text-xs text-gray-500 truncate">{getCnName(it.symbol, '')}</span>
+                      {g.group !== 'manual' && (
+                        <Badge variant="default">{g.label}</Badge>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-cream-500 font-mono">{formatAddedAt(it.added_at)}</span>
+                      <button
+                        onClick={() => handleRemove(it.symbol)}
+                        className="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none"
+                        title="删除"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

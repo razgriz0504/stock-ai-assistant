@@ -3,6 +3,7 @@ import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
 import { api } from '@/api/client'
 import { useScreenerStore, type ScreenerPreset } from '@/stores/screenerStore'
+import { useWatchlistStore } from '@/stores/watchlistStore'
 import { getCnName, getCnSector } from '@/data/cnNames'
 
 // ── Filter definitions ──
@@ -440,9 +441,47 @@ function RunTab() {
 // Results Tab
 // ═══════════════════════════════════════════════════════════════
 function ResultsTab() {
-  const { results, totalPassed, runId } = useScreenerStore()
+  const { results, totalPassed, runId, presets, activePresetId } = useScreenerStore()
+  const { items: watchItems, fetch: fetchWatchlist, add: addWatch, remove: removeWatch } = useWatchlistStore()
   const [sortBy, setSortBy] = useState<string>('score')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [pendingSym, setPendingSym] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
+
+  // 首次进入 / 刚跑完选股 时拉取关注列表
+  useEffect(() => { fetchWatchlist() }, [fetchWatchlist, runId])
+
+  // 来源标签: screener:<preset_name>
+  const sourceTag = (() => {
+    const preset = presets.find((p) => p.id === activePresetId)
+    const name = preset?.name?.trim() || '自定义策略'
+    return `screener:${name}`
+  })()
+
+  const watchedSet = new Set(watchItems.map((it) => it.symbol))
+
+  const showToast = (msg: string, type: 'ok' | 'err' = 'ok') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 2200)
+  }
+
+  const handleToggleWatch = async (symbol: string) => {
+    if (pendingSym) return
+    setPendingSym(symbol)
+    try {
+      if (watchedSet.has(symbol)) {
+        await removeWatch(symbol)
+        showToast(`已移除 ${symbol}`)
+      } else {
+        const { alreadyExists } = await addWatch(symbol, sourceTag)
+        showToast(alreadyExists ? `${symbol} 已在关注列表` : `已加入关注 ${symbol}`)
+      }
+    } catch {
+      showToast('操作失败', 'err')
+    } finally {
+      setPendingSym(null)
+    }
+  }
 
   const sorted = [...results].sort((a, b) => {
     const aVal = (a as unknown as Record<string, unknown>)[sortBy] as number || 0
@@ -487,13 +526,22 @@ function ResultsTab() {
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-gray-500">
           共筛出 <span className="font-mono font-bold text-copper">{totalPassed}</span> 只股票
+          <span className="ml-3 text-xs text-cream-500">
+            点击 ☆ 一键加入关注 · 来源: {sourceTag.replace('screener:', '')}
+          </span>
         </p>
+        {toast && (
+          <span className={`text-xs ${toast.type === 'ok' ? 'text-success' : 'text-danger'}`}>
+            {toast.msg}
+          </span>
+        )}
       </div>
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-cream-300 bg-cream-100">
+                <th className="text-center px-2 py-2 font-mono text-[10px] uppercase text-gray-500 w-10">关注</th>
                 <th className="text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500">代码</th>
                 <th className="text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500">名称</th>
                 <th className="text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500">板块</th>
@@ -506,27 +554,44 @@ function ResultsTab() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r) => (
-                <tr key={r.symbol} className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
-                  <td className="px-3 py-2 font-mono font-semibold text-xs">{r.symbol}</td>
-                  <td className="px-3 py-2 text-xs text-gray-600">{getCnName(r.symbol, r.name)}</td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <Badge variant={r.score >= 70 ? 'success' : r.score >= 40 ? 'warning' : 'danger'}>
-                      {r.score?.toFixed(1)}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-2"><Badge variant="copper">{r.rating || '-'}</Badge></td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">${r.price?.toFixed(2)}</td>
-                  <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${r.change_pct >= 0 ? 'text-success' : 'text-danger'}`}>
-                    {r.change_pct >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{r.pe_ratio?.toFixed(1) || '-'}</td>
-                  <td className="px-3 py-2 text-right font-mono text-xs">{fmtCap(r.market_cap)}</td>
-                </tr>
-              ))}
+              {sorted.map((r) => {
+                const watched = watchedSet.has(r.symbol)
+                const busy = pendingSym === r.symbol
+                return (
+                  <tr key={r.symbol} className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
+                    <td className="px-2 py-2 text-center">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => handleToggleWatch(r.symbol)}
+                        title={watched ? '点击取消关注' : `加入关注 (来源: ${sourceTag.replace('screener:', '')})`}
+                        className={`text-base leading-none transition-colors ${
+                          watched ? 'text-copper' : 'text-cream-400 hover:text-copper'
+                        } ${busy ? 'opacity-40 cursor-wait' : 'cursor-pointer'}`}
+                      >
+                        {watched ? '★' : '☆'}
+                      </button>
+                    </td>
+                    <td className="px-3 py-2 font-mono font-semibold text-xs">{r.symbol}</td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{getCnName(r.symbol, r.name)}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <Badge variant={r.score >= 70 ? 'success' : r.score >= 40 ? 'warning' : 'danger'}>
+                        {r.score?.toFixed(1)}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2"><Badge variant="copper">{r.rating || '-'}</Badge></td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">${r.price?.toFixed(2)}</td>
+                    <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${r.change_pct >= 0 ? 'text-success' : 'text-danger'}`}>
+                      {r.change_pct >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{r.pe_ratio?.toFixed(1) || '-'}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmtCap(r.market_cap)}</td>
+                  </tr>
+                )
+              })}
               {results.length === 0 && (
-                <tr><td colSpan={9} className="text-center py-8 text-sm text-gray-400">暂无结果</td></tr>
+                <tr><td colSpan={10} className="text-center py-8 text-sm text-gray-400">暂无结果</td></tr>
               )}
             </tbody>
           </table>
