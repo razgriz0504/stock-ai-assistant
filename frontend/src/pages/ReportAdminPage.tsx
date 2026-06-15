@@ -63,6 +63,10 @@ export default function ReportAdminPage() {
       setGeneratingId(data.report_id)
       queryClient.invalidateQueries({ queryKey: ['admin-reports'] })
     },
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail || err?.message || '未知错误'
+      alert(`生成报告失败: ${detail}`)
+    },
   })
 
   const deleteMutation = useMutation({

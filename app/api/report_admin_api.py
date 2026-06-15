@@ -104,7 +104,16 @@ async def start_generate(
     import json as _json
 
     config = get_or_create_report_config(db)
-    market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, stocks_prompt, yield_curve_prompt, x_monitor_prompt = _resolve_prompts(config)
+    (
+        market_prompt,
+        capital_prompt,
+        geopolitics_prompt,
+        sector_prompt,
+        stocks_prompt,
+        yield_curve_prompt,
+        x_monitor_prompt,
+        sector_strength_prompt,
+    ) = _resolve_prompts(config)
     from app.llm.client import get_model
     model_name = get_model()
     version = _get_next_version(db)
