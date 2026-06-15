@@ -6,12 +6,13 @@
 
 读取时自动统一为对象格式;写入时优先用对象格式持久化。
 """
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -215,6 +216,85 @@ async def remove_watchlist(req: WatchlistRemoveRequest):
         }
     finally:
         db.close()
+
+
+# ─── 行情快照接口 ───
+
+
+def _fetch_quotes_sync(symbols: list[str]) -> dict[str, dict]:
+    """批量拉取行情快照: {symbol: {price, prev_close, change_pct, name}}"""
+    if not symbols:
+        return {}
+    try:
+        import yfinance as yf
+    except Exception as e:
+        logger.warning(f"[watchlist] yfinance import failed: {e}")
+        return {}
+
+    result: dict[str, dict] = {}
+    try:
+        # 拉 5d 历史,用最后两根 K 线算日涨跌
+        data = yf.download(
+            symbols,
+            period="5d",
+            progress=False,
+            threads=True,
+            group_by="ticker",
+            auto_adjust=False,
+        )
+        if data is None or data.empty:
+            return {}
+
+        import pandas as pd
+        single = len(symbols) == 1
+
+        for sym in symbols:
+            try:
+                if single:
+                    df = data
+                else:
+                    if isinstance(data.columns, pd.MultiIndex):
+                        # group_by='ticker' 时第 0 层是 ticker
+                        if sym in data.columns.get_level_values(0):
+                            df = data[sym]
+                        elif sym in data.columns.get_level_values(1):
+                            df = data.xs(sym, level=1, axis=1)
+                        else:
+                            continue
+                    else:
+                        continue
+                close_series = df["Close"].dropna() if "Close" in df.columns else None
+                if close_series is None or close_series.empty:
+                    continue
+                price = float(close_series.iloc[-1])
+                prev = float(close_series.iloc[-2]) if len(close_series) >= 2 else price
+                chg_pct = ((price - prev) / prev * 100.0) if prev else 0.0
+                result[sym] = {
+                    "price": round(price, 2),
+                    "prev_close": round(prev, 2),
+                    "change_pct": round(chg_pct, 2),
+                }
+            except Exception as e:
+                logger.debug(f"[watchlist] quote parse failed for {sym}: {e}")
+                continue
+    except Exception as e:
+        logger.warning(f"[watchlist] yf.download failed: {e}")
+
+    return result
+
+
+@router.get("/api/watchlist/quotes")
+async def watchlist_quotes(symbols: str = Query("", description="逗号分隔的股票代码")):
+    """批量行情快照,前端只用一次请求拿到所有关注股的最新价/涨跌幅"""
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    syms = list(dict.fromkeys(syms))[:60]   # 去重 + 上限保护
+    if not syms:
+        return {"quotes": {}}
+    quotes = await asyncio.to_thread(_fetch_quotes_sync, syms)
+    return {
+        "quotes": quotes,
+        "generated_at": _now_iso(),
+    }
 
 
 @router.get("/watchlist", response_class=HTMLResponse)

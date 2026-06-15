@@ -1,7 +1,23 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Card, Button, Badge } from '@/components/ui'
+
+// SPDR 板块 ETF → yfinance 中的 sector 名称
+const SPDR_TO_SECTOR: Record<string, string> = {
+  XLK: 'Technology',
+  XLF: 'Financial Services',
+  XLV: 'Healthcare',
+  XLY: 'Consumer Cyclical',
+  XLP: 'Consumer Defensive',
+  XLC: 'Communication Services',
+  XLI: 'Industrials',
+  XLE: 'Energy',
+  XLB: 'Basic Materials',
+  XLRE: 'Real Estate',
+  XLU: 'Utilities',
+}
 
 interface SectorItem {
   symbol: string
@@ -20,6 +36,7 @@ interface SectorItem {
 type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio'
 
 export default function SectorStrengthPage() {
+  const navigate = useNavigate()
   const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
 
@@ -136,34 +153,53 @@ export default function SectorStrengthPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((s, i) => (
-                  <tr key={s.symbol} className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono font-semibold text-xs">{s.symbol}</span>
-                      <span className="text-xs text-gray-500 ml-2">{s.name}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge>{s.category}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-xs">${s.current?.toFixed(2)}</td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_5d)}`}>
-                      {fmtPct(s.chg_5d)}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_15d)}`}>
-                      {fmtPct(s.chg_15d)}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_30d)}`}>
-                      {fmtPct(s.chg_30d)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs?.composite?.toFixed(1) ?? '-'}</td>
-                    <td className="px-4 py-3 text-center">
-                      <Badge variant={s.flow?.direction === 'inflow' ? 'success' : s.flow?.direction === 'outflow' ? 'danger' : 'default'}>
-                        {s.flow?.direction === 'inflow' ? '流入' : s.flow?.direction === 'outflow' ? '流出' : '中性'}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((s, i) => {
+                  const sectorName = SPDR_TO_SECTOR[s.symbol]
+                  const clickable = !!sectorName
+                  const handleClick = () => {
+                    if (clickable) {
+                      navigate(`/screener?sector=${encodeURIComponent(sectorName)}&autorun=1`)
+                    }
+                  }
+                  return (
+                    <tr
+                      key={s.symbol}
+                      onClick={handleClick}
+                      className={`border-b border-cream-200 transition-colors ${
+                        clickable ? 'hover:bg-orange-50 cursor-pointer' : 'hover:bg-cream-50'
+                      }`}
+                      title={clickable ? `点击锁定${s.name}板块运行选股` : '主题 ETF 不支持锁定选股'}
+                    >
+                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-mono font-semibold text-xs">{s.symbol}</span>
+                        <span className="text-xs text-gray-500 ml-2">{s.name}</span>
+                        {clickable && (
+                          <span className="ml-2 text-[10px] text-copper opacity-0 group-hover:opacity-100">→ 选股</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge>{s.category}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">${s.current?.toFixed(2)}</td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_5d)}`}>
+                        {fmtPct(s.chg_5d)}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_15d)}`}>
+                        {fmtPct(s.chg_15d)}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_30d)}`}>
+                        {fmtPct(s.chg_30d)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs?.composite?.toFixed(1) ?? '-'}</td>
+                      <td className="px-4 py-3 text-center">
+                        <Badge variant={s.flow?.direction === 'inflow' ? 'success' : s.flow?.direction === 'outflow' ? 'danger' : 'default'}>
+                          {s.flow?.direction === 'inflow' ? '流入' : s.flow?.direction === 'outflow' ? '流出' : '中性'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Card, CardHeader, Button, Input, Badge } from '@/components/ui'
+import { Card, CardHeader, Button, Input } from '@/components/ui'
 import { useWatchlistStore, describeSource, type WatchlistItem } from '@/stores/watchlistStore'
 import { getCnName } from '@/data/cnNames'
 
@@ -22,11 +22,19 @@ function formatAddedAt(iso: string): string {
 }
 
 export default function WatchlistPage() {
-  const { items, loading, error, fetch: fetchList, add, remove } = useWatchlistStore()
+  const {
+    items, loading, error,
+    fetch: fetchList, add, remove,
+    quotes, quotesLoading, fetchQuotes,
+  } = useWatchlistStore()
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 
   useEffect(() => { fetchList() }, [fetchList])
+  // 列表变化后拉取行情快照
+  useEffect(() => {
+    if (items.length > 0) fetchQuotes()
+  }, [items, fetchQuotes])
 
   const showStatus = (msg: string, type: 'ok' | 'err') => {
     setStatus({ msg, type })
@@ -127,35 +135,48 @@ export default function WatchlistPage() {
         <div className="space-y-4">
           {groups.map((g) => (
             <Card key={g.key}>
-              <CardHeader
-                title={g.label}
-                label={`${g.items.length} 只`}
-              />
+              <div className="flex items-center justify-between mb-3">
+                <CardHeader title={g.label} label={`${g.items.length} 只`} />
+                {quotesLoading && (
+                  <span className="text-[11px] text-cream-500 font-mono">行情拉取中...</span>
+                )}
+              </div>
               <div className="space-y-2">
-                {g.items.map((it) => (
-                  <div
-                    key={it.symbol}
-                    className="flex items-center justify-between px-4 py-3 bg-cream-100 border border-cream-300 rounded-md group hover:border-copper/40 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="font-mono font-semibold text-sm tracking-wide">{it.symbol}</span>
-                      <span className="text-xs text-gray-500 truncate">{getCnName(it.symbol, '')}</span>
-                      {g.group !== 'manual' && (
-                        <Badge variant="default">{g.label}</Badge>
-                      )}
+                {g.items.map((it) => {
+                  const q = quotes[it.symbol]
+                  const chg = q?.change_pct
+                  const chgColor =
+                    chg == null ? 'text-gray-400' : chg > 0 ? 'text-success' : chg < 0 ? 'text-danger' : 'text-gray-500'
+                  const chgText =
+                    chg == null ? '-' : `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`
+                  return (
+                    <div
+                      key={it.symbol}
+                      className="flex items-center justify-between px-4 py-3 bg-cream-100 border border-cream-300 rounded-md group hover:border-copper/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <span className="font-mono font-semibold text-sm tracking-wide w-16">{it.symbol}</span>
+                        <span className="text-xs text-gray-500 truncate flex-1">{getCnName(it.symbol, '')}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="font-mono text-sm tabular-nums w-20 text-right">
+                          {q?.price != null ? `$${q.price.toFixed(2)}` : '-'}
+                        </span>
+                        <span className={`font-mono text-xs tabular-nums w-16 text-right font-medium ${chgColor}`}>
+                          {chgText}
+                        </span>
+                        <span className="text-[11px] text-cream-500 font-mono w-20 text-right">{formatAddedAt(it.added_at)}</span>
+                        <button
+                          onClick={() => handleRemove(it.symbol)}
+                          className="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none w-4"
+                          title="删除"
+                        >
+                          &times;
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-cream-500 font-mono">{formatAddedAt(it.added_at)}</span>
-                      <button
-                        onClick={() => handleRemove(it.symbol)}
-                        className="text-danger opacity-0 group-hover:opacity-100 transition-opacity text-lg leading-none"
-                        title="删除"
-                      >
-                        &times;
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </Card>
           ))}

@@ -421,6 +421,28 @@ def filter_dividend_yield(df: pd.DataFrame, info: dict, params: dict) -> bool:
     return dy >= params.get("min_pct", 0)
 
 
+def filter_sector(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """Sector membership filter.
+    Accepts either:
+      - {"sectors": ["Technology", "Financial Services", ...]}  (multi)
+      - {"sector": "Technology"}                                  (single, from URL/UI)
+    Matches yfinance `sector` field exactly. Empty/missing means pass-all.
+    """
+    targets_raw = params.get("sectors")
+    if not targets_raw:
+        single = params.get("sector")
+        targets_raw = [single] if single else []
+    if not isinstance(targets_raw, list) or len(targets_raw) == 0:
+        return True
+    target_set = {str(t).strip() for t in targets_raw if str(t).strip()}
+    if not target_set:
+        return True
+    sector = (info.get("sector") or "").strip()
+    if not sector:
+        return False
+    return sector in target_set
+
+
 # ═══════════════════════════════════════════════════════════════
 # Filter Registry
 # ═══════════════════════════════════════════════════════════════
@@ -442,6 +464,7 @@ FUNDAMENTAL_FILTERS = {
     "revenue_growth": filter_revenue_growth,
     "roe_filter": filter_roe,
     "dividend_yield": filter_dividend_yield,
+    "sector": filter_sector,
 }
 
 ALL_FILTERS = {**TECHNICAL_FILTERS, **FUNDAMENTAL_FILTERS}

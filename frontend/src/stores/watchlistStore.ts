@@ -10,14 +10,24 @@ export interface WatchlistItem {
   note: string
 }
 
+export interface WatchlistQuote {
+  price: number
+  prev_close: number
+  change_pct: number
+}
+
 interface WatchlistState {
   items: WatchlistItem[]
   loading: boolean
   error: string | null
   /** O(1) 查询某个 symbol 是否已关注 */
   symbolSet: Set<string>
+  /** 行情快照 (symbol -> quote) */
+  quotes: Record<string, WatchlistQuote>
+  quotesLoading: boolean
 
   fetch: () => Promise<void>
+  fetchQuotes: () => Promise<void>
   /** 加入单只股票,带来源标签;返回是否已存在 */
   add: (symbol: string, source?: string, note?: string) => Promise<{ alreadyExists: boolean }>
   remove: (symbol: string) => Promise<void>
@@ -35,6 +45,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
   loading: false,
   error: null,
   symbolSet: new Set(),
+  quotes: {},
+  quotesLoading: false,
 
   fetch: async () => {
     set({ loading: true, error: null })
@@ -45,6 +57,25 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
     } catch (e) {
       const msg = e instanceof Error ? e.message : '加载失败'
       set({ loading: false, error: msg })
+    }
+  },
+
+  fetchQuotes: async () => {
+    const symbols = get().items.map((i) => i.symbol)
+    if (symbols.length === 0) {
+      set({ quotes: {} })
+      return
+    }
+    set({ quotesLoading: true })
+    try {
+      const res = await api.get<{ quotes: Record<string, WatchlistQuote> }>(
+        `/api/watchlist/quotes?symbols=${encodeURIComponent(symbols.join(','))}`,
+      )
+      set({ quotes: res.data.quotes || {}, quotesLoading: false })
+    } catch (e) {
+      // 行情拉取失败不阻断主流程
+      console.warn('[watchlist] fetchQuotes failed', e)
+      set({ quotesLoading: false })
     }
   },
 

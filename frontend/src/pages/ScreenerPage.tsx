@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
 import { api } from '@/api/client'
@@ -102,6 +103,28 @@ const FILTERS: FilterDef[] = [
     key: 'dividend_yield', label: '股息率', category: 'fundamental',
     params: [{ id: 'min_pct', label: '最低%', type: 'number', default: 1, step: 0.5, min: 0 }],
   },
+  {
+    key: 'sector', label: '锁定板块', category: 'fundamental',
+    params: [
+      {
+        id: 'sector', label: '板块', type: 'select', default: '',
+        options: [
+          { value: '', label: '不限定' },
+          { value: 'Technology', label: '科技' },
+          { value: 'Financial Services', label: '金融' },
+          { value: 'Healthcare', label: '医疗健康' },
+          { value: 'Consumer Cyclical', label: '可选消费' },
+          { value: 'Consumer Defensive', label: '必需消费' },
+          { value: 'Communication Services', label: '通信服务' },
+          { value: 'Industrials', label: '工业' },
+          { value: 'Energy', label: '能源' },
+          { value: 'Basic Materials', label: '原材料' },
+          { value: 'Real Estate', label: '房地产' },
+          { value: 'Utilities', label: '公用事业' },
+        ],
+      },
+    ],
+  },
 ]
 
 const CATEGORY_LABELS = {
@@ -164,6 +187,11 @@ function RunTab() {
   // Filter state: { [filterKey]: { enabled: boolean, ...params } }
   const [filterState, setFilterState] = useState<Record<string, Record<string, unknown>>>({})
   const [presetName, setPresetName] = useState('')
+  const [autoRunBanner, setAutoRunBanner] = useState<string | null>(null)
+
+  // URL query 驱动的锁定板块 + 自动运行
+  const [searchParams, setSearchParams] = useSearchParams()
+  const autoTriggerRef = useRef(false)
 
   // Toggle a filter on/off
   const toggleFilter = (key: string) => {
@@ -252,6 +280,47 @@ function RunTab() {
     await startRun()
     startPolling()
   }
+
+  // 从板块雷达跳转过来时: 预填 sector 过滤器并可选自动运行
+  useEffect(() => {
+    if (autoTriggerRef.current) return
+    const urlSector = searchParams.get('sector')
+    const autorun = searchParams.get('autorun') === '1'
+    if (!urlSector) return
+    autoTriggerRef.current = true
+
+    const sectorFilter = { enabled: true, sector: urlSector }
+    setFilterState({ sector: sectorFilter })
+    setAutoRunBanner(`已锁定板块: ${urlSector}${autorun ? ' · 自动运行中...' : ''}`)
+
+    // 清掉 URL 参数避免刷新/后退重复触发
+    const next = new URLSearchParams(searchParams)
+    next.delete('sector')
+    next.delete('autorun')
+    setSearchParams(next, { replace: true })
+
+    if (autorun) {
+      // 手动先同步 store filtersJson不依赖 buildFiltersJson 的下一轮渲染
+      const filtersJson = JSON.stringify({
+        technical: {},
+        fundamental: { sector: sectorFilter },
+      })
+      setFilters(filtersJson)
+      // 下一个微任务运行避免 React state 未提交
+      Promise.resolve().then(async () => {
+        try {
+          await startRun()
+          startPolling()
+        } catch (e) {
+          console.warn('autorun failed', e)
+        } finally {
+          setTimeout(() => setAutoRunBanner(null), 4000)
+        }
+      })
+    } else {
+      setTimeout(() => setAutoRunBanner(null), 4000)
+    }
+  }, [searchParams, setSearchParams, setFilters, startRun, startPolling])
 
   // Group filters by category
   const categories = ['trend_continuation', 'trend_initiation', 'auxiliary', 'fundamental'] as const
@@ -377,6 +446,13 @@ function RunTab() {
 
       {/* Right: Status + Run */}
       <div className="space-y-4">
+        {/* Auto-run banner from sector radar */}
+        {autoRunBanner && (
+          <div className="px-4 py-2 rounded-lg bg-orange-50 border border-copper/30 text-xs text-copper font-medium">
+            🎯 {autoRunBanner}
+          </div>
+        )}
+
         {/* Status bar */}
         {status !== 'idle' && (
           <div className={`px-4 py-3 rounded-lg flex items-center gap-3 ${
