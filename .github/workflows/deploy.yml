@@ -31,6 +31,23 @@ jobs:
             npm run build
             cd ..
 
+            # Nginx 同步：将仓库 deploy/nginx.conf 同步到生产，保留已配置的 server_name
+            # ⚠⚠⚠ SSL 保护：若生产配置已含 ssl_certificate（certbot 生成），跳过同步以免干掉 SSL
+            if sudo grep -q "ssl_certificate" /etc/nginx/sites-available/stock-ai 2>/dev/null; then
+              echo "[WARN] 生产 nginx 已含 SSL 配置，跳过 deploy/nginx.conf 同步。如需更新请手动同步并保留 SSL 行。"
+            else
+              # 1) 从当前生产配置抽出已生效的域名（避免被 YOUR_DOMAIN 覆盖）
+              CURRENT_DOMAIN=$(sudo awk '/server_name/ {print $2; exit}' /etc/nginx/sites-available/stock-ai 2>/dev/null | tr -d ';' || echo "")
+              if [ -n "$CURRENT_DOMAIN" ] && [ "$CURRENT_DOMAIN" != "YOUR_DOMAIN" ]; then
+                sudo sed "s/server_name YOUR_DOMAIN;/server_name $CURRENT_DOMAIN;/" deploy/nginx.conf | sudo tee /etc/nginx/sites-available/stock-ai > /dev/null
+              else
+                sudo cp deploy/nginx.conf /etc/nginx/sites-available/stock-ai
+              fi
+            fi
+            # 2) 校验后 reload（-t 失败会因 set -e 中断部署）
+            sudo nginx -t
+            sudo systemctl reload nginx
+
             # Restart service
             sudo systemctl restart stock-ai
             echo "Deploy completed at $(date)"

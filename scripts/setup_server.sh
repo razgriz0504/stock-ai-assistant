@@ -42,28 +42,10 @@ source venv/bin/activate
 pip install --upgrade pip
 
 # 5. 配置 Nginx (需要替换 YOUR_DOMAIN)
+# 架构: SPA 静态资源走 nginx，/api & /docs 反代到 FastAPI (gunicorn:8000)
+# 详细配置见 deploy/nginx.conf（仓库管理的唯一权威源）
 echo "[5/7] 配置 Nginx..."
-cat > /etc/nginx/sites-available/stock-ai <<'NGINX_CONF'
-server {
-    listen 80;
-    server_name YOUR_DOMAIN;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # 飞书 webhook 可能发送较大的消息体
-        client_max_body_size 10M;
-
-        # 超时设置（回测等耗时操作）
-        proxy_read_timeout 120s;
-        proxy_connect_timeout 10s;
-    }
-}
-NGINX_CONF
+cp /opt/stock-ai-assistant/deploy/nginx.conf /etc/nginx/sites-available/stock-ai
 
 ln -sf /etc/nginx/sites-available/stock-ai /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
