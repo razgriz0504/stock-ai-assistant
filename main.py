@@ -11,14 +11,14 @@ from app.api.feishu_webhook import router as feishu_router
 from app.api.health import router as health_router
 from app.api.web_chat import router as chat_router
 from app.api.settings import router as settings_router
-from app.api.backtest_page import router as backtest_router
-from app.api.watchlist_page import router as watchlist_router
-from app.api.scoring_page import router as scoring_router
-from app.api.report_admin_page import router as report_admin_router
-from app.api.screener_page import router as screener_router
-from app.api.x_monitor_page import router as x_monitor_router
-from app.api.sector_strength_page import router as sector_strength_router
-from app.api.dashboard_page import router as dashboard_router
+from app.api.backtest_api import router as backtest_router
+from app.api.watchlist_api import router as watchlist_router
+from app.api.report_api import router as scoring_router
+from app.api.report_admin_api import router as report_admin_router
+from app.api.screener_api import router as screener_router
+from app.api.x_monitor_api import router as x_monitor_router
+from app.api.sector_strength_api import router as sector_strength_router
+from app.api.dashboard_api import router as dashboard_router
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,

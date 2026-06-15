@@ -115,7 +115,7 @@ _resolve_prompts(config) → 7-tuple:
 
 ## 前端展示
 
-- 周报查看页: `/scoring`（`scoring_page.py`）
+- 周报查看页: `/scoring`（`report_api.py`）
 - 使用 `marked.js` 渲染 Markdown + `KaTeX` 渲染 LaTeX
 - `renderMd()` helper 先保护 LaTeX 块，再用 marked 解析，最后恢复 LaTeX
 - 版本切换: 可查看历史版本

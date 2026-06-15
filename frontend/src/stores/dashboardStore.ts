@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { api } from '@/api/client'
 
-// ── 类型定义,与后端 dashboard_page.py 返回结构对齐 ──
+// ── 类型定义,与后端 dashboard_api.py 返回结构对齐 ──
 
 export interface DashSectorItem {
   symbol: string

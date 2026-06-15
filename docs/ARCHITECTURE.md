@@ -111,12 +111,12 @@
 
 | 路由文件 | 挂载路径 | 功能 |
 |---------|---------|------|
-| `scoring_page.py` | `/scoring` | 周报查看（公开页面） |
-| `report_admin_page.py` | `/report-admin` | 周报管理（生成/配置/历史） |
-| `screener_page.py` | `/screener` | 选股器 |
-| `x_monitor_page.py` | `/x-monitor` | X 舆情监控 |
-| `backtest_page.py` | `/backtest` | 策略回测 |
-| `watchlist_page.py` | `/watchlist` | 自选股管理 |
+| `report_api.py` | `/scoring` | 周报查看（公开页面） |
+| `report_admin_api.py` | `/report-admin` | 周报管理（生成/配置/历史） |
+| `screener_api.py` | `/screener` | 选股器 |
+| `x_monitor_api.py` | `/x-monitor` | X 舆情监控 |
+| `backtest_api.py` | `/backtest` | 策略回测 |
+| `watchlist_api.py` | `/watchlist` | 自选股管理 |
 | `web_chat.py` | `/chat` | AI 对话 |
 | `settings.py` | `/settings` | 系统设置（模型切换等） |
 | `health.py` | `/health` | 健康检查 |
