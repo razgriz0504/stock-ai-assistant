@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from db.models import SessionLocal, UserPreference
+from db.models import SessionLocal, UserPreference, XTweet
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -293,6 +293,96 @@ async def watchlist_quotes(symbols: str = Query("", description="逗号分隔的
     quotes = await asyncio.to_thread(_fetch_quotes_sync, syms)
     return {
         "quotes": quotes,
+        "generated_at": _now_iso(),
+    }
+
+
+# ─── X 舆情聚合接口 ───
+
+
+def _normalize_asset(asset: str) -> str:
+    """X 推文中的 impact_assets 可能是 'AAPL' / '$AAPL' / 'Apple Inc.' 等,统一成大写 ticker"""
+    if not asset:
+        return ""
+    s = str(asset).strip().upper().lstrip("$").strip()
+    # 只保留可能的 ticker(字母数字 + . -),其它视为公司名
+    if not s or len(s) > 8:
+        return ""
+    if not all(c.isalnum() or c in ".-" for c in s):
+        return ""
+    return s
+
+
+@router.get("/api/watchlist/sentiment")
+async def watchlist_sentiment(
+    symbols: str = Query("", description="逗号分隔的股票代码"),
+    days: int = Query(7, ge=1, le=90, description="统计窗口天数"),
+):
+    """聚合关注列表中每只股票的最近 X 推文舆情:
+    返回 {symbol: {bullish, bearish, neutral, total, latest: {...}}}
+    """
+    syms = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    syms = list(dict.fromkeys(syms))[:60]
+    if not syms:
+        return {"sentiment": {}, "days": days}
+
+    sym_set = set(syms)
+    result: dict[str, dict] = {
+        s: {"bullish": 0, "bearish": 0, "neutral": 0, "total": 0, "latest": None}
+        for s in syms
+    }
+
+    db = SessionLocal()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        # 仅取已 AI 处理过的推文(有 impact_assets)
+        tweets = (
+            db.query(XTweet)
+            .filter(XTweet.created_at_x >= cutoff)
+            .filter(XTweet.processed == True)  # noqa: E712
+            .filter(XTweet.impact_assets.isnot(None))
+            .order_by(XTweet.created_at_x.desc())
+            .limit(500)
+            .all()
+        )
+
+        for t in tweets:
+            try:
+                assets = json.loads(t.impact_assets) if t.impact_assets else []
+            except Exception:
+                continue
+            if not isinstance(assets, list):
+                continue
+            sentiment = (t.sentiment or "neutral").lower()
+            bucket = "bullish" if sentiment == "bullish" else "bearish" if sentiment == "bearish" else "neutral"
+
+            # 一条推文若同时影响多只关注股,各计 1 次
+            seen_in_tweet: set[str] = set()
+            for a in assets:
+                norm = _normalize_asset(a)
+                if not norm or norm in seen_in_tweet:
+                    continue
+                if norm not in sym_set:
+                    continue
+                seen_in_tweet.add(norm)
+                cell = result[norm]
+                cell[bucket] += 1
+                cell["total"] += 1
+                # 保留最新一条(因为按 desc 排序,只在第一次记录)
+                if cell["latest"] is None:
+                    cell["latest"] = {
+                        "tweet_id": t.tweet_id,
+                        "username": t.username,
+                        "sentiment": sentiment,
+                        "text_zh": (t.text_zh or t.text or "")[:120],
+                        "created_at_x": t.created_at_x.isoformat() if t.created_at_x else None,
+                    }
+    finally:
+        db.close()
+
+    return {
+        "sentiment": result,
+        "days": days,
         "generated_at": _now_iso(),
     }
 

@@ -26,15 +26,19 @@ export default function WatchlistPage() {
     items, loading, error,
     fetch: fetchList, add, remove,
     quotes, quotesLoading, fetchQuotes,
+    sentiment, sentimentLoading, fetchSentiment,
   } = useWatchlistStore()
   const [input, setInput] = useState('')
   const [status, setStatus] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 
   useEffect(() => { fetchList() }, [fetchList])
-  // 列表变化后拉取行情快照
+  // 列表变化后拉取行情快照 + X 舆情聚合
   useEffect(() => {
-    if (items.length > 0) fetchQuotes()
-  }, [items, fetchQuotes])
+    if (items.length > 0) {
+      fetchQuotes()
+      fetchSentiment(7)
+    }
+  }, [items, fetchQuotes, fetchSentiment])
 
   const showStatus = (msg: string, type: 'ok' | 'err') => {
     setStatus({ msg, type })
@@ -137,9 +141,10 @@ export default function WatchlistPage() {
             <Card key={g.key}>
               <div className="flex items-center justify-between mb-3">
                 <CardHeader title={g.label} label={`${g.items.length} 只`} />
-                {quotesLoading && (
-                  <span className="text-[11px] text-cream-500 font-mono">行情拉取中...</span>
-                )}
+                <span className="text-[11px] text-cream-500 font-mono">
+                  {quotesLoading && '行情拉取中... '}
+                  {sentimentLoading && '舆情聚合中...'}
+                </span>
               </div>
               <div className="space-y-2">
                 {g.items.map((it) => {
@@ -149,6 +154,19 @@ export default function WatchlistPage() {
                     chg == null ? 'text-gray-400' : chg > 0 ? 'text-success' : chg < 0 ? 'text-danger' : 'text-gray-500'
                   const chgText =
                     chg == null ? '-' : `${chg >= 0 ? '+' : ''}${chg.toFixed(2)}%`
+                  const sent = sentiment[it.symbol]
+                  const hasSent = sent && sent.total > 0
+                  // 徽章颜色: 看涨占多 -> 绿; 看跌占多 -> 红; 中性主 -> 灰
+                  const sentTone = !hasSent
+                    ? 'border-cream-300 text-gray-400 bg-cream-50'
+                    : sent.bullish > sent.bearish
+                      ? 'border-success/30 text-success bg-success/5'
+                      : sent.bearish > sent.bullish
+                        ? 'border-danger/30 text-danger bg-danger/5'
+                        : 'border-cream-300 text-gray-500 bg-cream-100'
+                  const sentTitle = hasSent
+                    ? `近 7 天 X 舆情: 看涨 ${sent.bullish} / 看跌 ${sent.bearish} / 中性 ${sent.neutral}${sent.latest ? '\n最新: @' + sent.latest.username + ' - ' + sent.latest.text_zh : ''}`
+                    : '近 7 天无 X 推文提及'
                   return (
                     <div
                       key={it.symbol}
@@ -159,6 +177,14 @@ export default function WatchlistPage() {
                         <span className="text-xs text-gray-500 truncate flex-1">{getCnName(it.symbol, '')}</span>
                       </div>
                       <div className="flex items-center gap-4">
+                        <span
+                          className={`font-mono text-[10px] px-2 py-0.5 rounded border tabular-nums whitespace-nowrap ${sentTone}`}
+                          title={sentTitle}
+                        >
+                          {hasSent
+                            ? `↑${sent.bullish} ↓${sent.bearish}`
+                            : '—'}
+                        </span>
                         <span className="font-mono text-sm tabular-nums w-20 text-right">
                           {q?.price != null ? `$${q.price.toFixed(2)}` : '-'}
                         </span>

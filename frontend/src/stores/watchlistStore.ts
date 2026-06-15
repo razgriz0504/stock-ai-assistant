@@ -16,6 +16,20 @@ export interface WatchlistQuote {
   change_pct: number
 }
 
+export interface WatchlistSentiment {
+  bullish: number
+  bearish: number
+  neutral: number
+  total: number
+  latest: {
+    tweet_id: string
+    username: string
+    sentiment: string
+    text_zh: string
+    created_at_x: string | null
+  } | null
+}
+
 interface WatchlistState {
   items: WatchlistItem[]
   loading: boolean
@@ -25,9 +39,13 @@ interface WatchlistState {
   /** 行情快照 (symbol -> quote) */
   quotes: Record<string, WatchlistQuote>
   quotesLoading: boolean
+  /** X 舆情聚合 (symbol -> sentiment) */
+  sentiment: Record<string, WatchlistSentiment>
+  sentimentLoading: boolean
 
   fetch: () => Promise<void>
   fetchQuotes: () => Promise<void>
+  fetchSentiment: (days?: number) => Promise<void>
   /** 加入单只股票,带来源标签;返回是否已存在 */
   add: (symbol: string, source?: string, note?: string) => Promise<{ alreadyExists: boolean }>
   remove: (symbol: string) => Promise<void>
@@ -47,6 +65,8 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
   symbolSet: new Set(),
   quotes: {},
   quotesLoading: false,
+  sentiment: {},
+  sentimentLoading: false,
 
   fetch: async () => {
     set({ loading: true, error: null })
@@ -76,6 +96,24 @@ export const useWatchlistStore = create<WatchlistState>((set, get) => ({
       // 行情拉取失败不阻断主流程
       console.warn('[watchlist] fetchQuotes failed', e)
       set({ quotesLoading: false })
+    }
+  },
+
+  fetchSentiment: async (days = 7) => {
+    const symbols = get().items.map((i) => i.symbol)
+    if (symbols.length === 0) {
+      set({ sentiment: {} })
+      return
+    }
+    set({ sentimentLoading: true })
+    try {
+      const res = await api.get<{ sentiment: Record<string, WatchlistSentiment> }>(
+        `/api/watchlist/sentiment?symbols=${encodeURIComponent(symbols.join(','))}&days=${days}`,
+      )
+      set({ sentiment: res.data.sentiment || {}, sentimentLoading: false })
+    } catch (e) {
+      console.warn('[watchlist] fetchSentiment failed', e)
+      set({ sentimentLoading: false })
     }
   },
 

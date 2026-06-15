@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Card, CardHeader, Button, Input, Badge, Tabs } from '@/components/ui'
+import { useWatchlistStore } from '@/stores/watchlistStore'
 
 interface XAccount {
   id: number
@@ -29,6 +30,20 @@ export default function XMonitorPage() {
   const queryClient = useQueryClient()
   const [filterDays, setFilterDays] = useState(7)
   const [filterUser, setFilterUser] = useState('')
+  const [onlyWatched, setOnlyWatched] = useState(false)
+
+  // 关注列表 (在全局 store 中以避免重复拉取)
+  const watchItems = useWatchlistStore((s) => s.items)
+  const isWatched = useWatchlistStore((s) => s.isWatched)
+  const addWatch = useWatchlistStore((s) => s.add)
+  const fetchWatchlist = useWatchlistStore((s) => s.fetch)
+  // 首次进入页面拉取 watchlist (store 未加载时)
+  useEffect(() => {
+    if (watchItems.length === 0) {
+      fetchWatchlist()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Accounts
   const { data: accountsData } = useQuery({
@@ -66,6 +81,26 @@ export default function XMonitorPage() {
   const accounts: XAccount[] = accountsData?.accounts || []
   const tweets: XTweet[] = tweetsData?.tweets || []
   const config = configData || {}
+
+  // “仅看关注列表”过滤: 保留 impact_assets 中含关注股的推文
+  const watchedSet = useMemo(() => new Set(watchItems.map((i) => i.symbol)), [watchItems])
+  const filteredTweets = useMemo(() => {
+    if (!onlyWatched) return tweets
+    return tweets.filter((t) =>
+      (t.impact_assets || []).some((a) => {
+        const norm = String(a || '').trim().toUpperCase().replace(/^\$/, '')
+        return watchedSet.has(norm)
+      }),
+    )
+  }, [tweets, watchedSet, onlyWatched])
+
+  const handleAddWatch = async (sym: string, source: string) => {
+    try {
+      await addWatch(sym, source)
+    } catch (e) {
+      console.warn('[x-monitor] add watch failed', e)
+    }
+  }
 
   const sentimentBadge = (s: string) => {
     if (s === 'bullish') return <Badge variant="success">看涨</Badge>
@@ -126,6 +161,15 @@ export default function XMonitorPage() {
                   {fetchNowMutation.isSuccess && (
                     <span className="text-xs text-success">抓取完成</span>
                   )}
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer ml-auto">
+                    <input
+                      type="checkbox"
+                      checked={onlyWatched}
+                      onChange={(e) => setOnlyWatched(e.target.checked)}
+                      className="accent-copper"
+                    />
+                    <span>仅看关注股 ({watchItems.length})</span>
+                  </label>
                 </div>
 
                 {/* Tweet list */}
@@ -133,13 +177,17 @@ export default function XMonitorPage() {
                   <div className="flex justify-center py-12">
                     <div className="w-6 h-6 border-2 border-cream-300 border-t-copper rounded-full animate-spin" />
                   </div>
-                ) : tweets.length === 0 ? (
+                ) : filteredTweets.length === 0 ? (
                   <Card>
-                    <p className="text-center text-sm text-gray-500 py-8">暂无推文数据，请配置 Bearer Token 后点击"立即抓取"</p>
+                    <p className="text-center text-sm text-gray-500 py-8">
+                      {onlyWatched && tweets.length > 0
+                        ? '当前窗口内没有推文提及你的关注股'
+                        : '暂无推文数据，请配置 Bearer Token 后点击“立即抓取”'}
+                    </p>
                   </Card>
                 ) : (
                   <div className="space-y-4">
-                    {tweets.map(t => (
+                    {filteredTweets.map(t => (
                       <Card key={t.id} hover>
                         <div className="flex items-center justify-between mb-3">
                           <div className="flex items-center gap-3">
@@ -156,11 +204,35 @@ export default function XMonitorPage() {
                         {t.text && <p className="text-xs text-gray-500 italic mb-3">{t.text}</p>}
                         {t.impact_assets && t.impact_assets.length > 0 && (
                           <div className="flex gap-1.5 flex-wrap mb-2">
-                            {t.impact_assets.map((asset, i) => (
-                              <span key={i} className="font-mono text-xs px-2 py-0.5 rounded bg-cream-200 text-copper">
-                                {asset}
-                              </span>
-                            ))}
+                            {t.impact_assets.map((asset, i) => {
+                              const norm = String(asset || '').trim().toUpperCase().replace(/^\$/, '')
+                              // 仅对看起来像 ticker 的资产提供加入关注交互
+                              const looksLikeTicker = !!norm && norm.length <= 8 && /^[A-Z0-9.\-]+$/.test(norm)
+                              const watched = looksLikeTicker && isWatched(norm)
+                              if (!looksLikeTicker) {
+                                return (
+                                  <span key={i} className="font-mono text-xs px-2 py-0.5 rounded bg-cream-200 text-copper">
+                                    {asset}
+                                  </span>
+                                )
+                              }
+                              return (
+                                <button
+                                  key={i}
+                                  type="button"
+                                  onClick={() => !watched && handleAddWatch(norm, `x:@${t.username}`)}
+                                  disabled={watched}
+                                  title={watched ? '已在关注列表' : `加入关注 (来源: @${t.username})`}
+                                  className={`font-mono text-xs px-2 py-0.5 rounded border transition-colors ${
+                                    watched
+                                      ? 'bg-copper/10 border-copper/40 text-copper cursor-default'
+                                      : 'bg-cream-200 border-cream-300 text-copper hover:bg-copper hover:text-white hover:border-copper cursor-pointer'
+                                  }`}
+                                >
+                                  {watched ? '★ ' : '☆ '}{norm}
+                                </button>
+                              )
+                            })}
                           </div>
                         )}
                         {t.market_impact && (
