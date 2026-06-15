@@ -1,9 +1,9 @@
 """美股 AI 交易助手 - FastAPI 入口"""
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 
 from config import settings
 from db.models import init_db, SessionLocal, get_or_create_x_accounts
@@ -70,14 +70,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - 开发阶段允许前端 dev server 跨域访问
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS - 仅在开发/本地环境启用，生产环境同域部署(nginx 代理)无需
+if os.getenv("ENABLE_DEV_CORS", "0") == "1":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # 注册路由
 app.include_router(health_router)
@@ -94,85 +95,12 @@ app.include_router(sector_strength_router)
 app.include_router(dashboard_router)
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def root():
-    return """<!DOCTYPE html>
-<html lang="zh">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Stock AI Assistant</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0f1923; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-h1 { color: #4fc3f7; font-size: 28px; margin-bottom: 6px; }
-.subtitle { color: #78909c; font-size: 14px; margin-bottom: 40px; }
-.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; max-width: 900px; width: 100%; }
-.card {
-    background: #1a2634; border: 1px solid #2a3a4a; border-radius: 12px;
-    padding: 24px; text-decoration: none; color: inherit;
-    transition: border-color .2s, transform .15s;
-}
-.card:hover { border-color: #4fc3f7; transform: translateY(-2px); }
-.card-icon { font-size: 28px; margin-bottom: 12px; }
-.card-title { font-size: 17px; font-weight: 700; color: #e0e0e0; margin-bottom: 6px; }
-.card-desc { font-size: 13px; color: #78909c; line-height: 1.5; }
-.footer { margin-top: 40px; color: #37474f; font-size: 12px; }
-@media (max-width: 500px) { .grid { grid-template-columns: 1fr; } }
-</style>
-</head>
-<body>
-<h1>Stock AI Assistant</h1>
-<p class="subtitle">US Stock AI Trading Assistant</p>
-
-<div class="grid">
-    <a class="card" href="/chat">
-        <div class="card-icon">&#x1f4ac;</div>
-        <div class="card-title">AI Chat</div>
-        <div class="card-desc">AI stock analysis chat, ask questions about the market</div>
-    </a>
-    <a class="card" href="/backtest">
-        <div class="card-icon">&#x1f4c8;</div>
-        <div class="card-title">Strategy Backtest</div>
-        <div class="card-desc">Paste Python strategy code, run backtests with charts</div>
-    </a>
-    <a class="card" href="/scoring">
-        <div class="card-icon">&#x1f4ca;</div>
-        <div class="card-title">投研周报</div>
-        <div class="card-desc">Weekly market overview, sector analysis & stock scoring</div>
-    </a>
-    <a class="card" href="/watchlist">
-        <div class="card-icon">&#x2b50;</div>
-        <div class="card-title">Watchlist</div>
-        <div class="card-desc">Manage your stock watchlist for scoring</div>
-    </a>
-    <a class="card" href="/screener">
-        <div class="card-icon">&#x1f50d;</div>
-        <div class="card-title">Stock Screener</div>
-        <div class="card-desc">Scan S&P 500 + Nasdaq 100 with technical & fundamental filters</div>
-    </a>
-    <a class="card" href="/sector-strength">
-        <div class="card-icon">&#x1f4e1;</div>
-        <div class="card-title">板块强度雷达</div>
-        <div class="card-desc">41 ETF relative strength, fund flow signals & sector rotation</div>
-    </a>
-    <a class="card" href="/x-monitor">
-        <div class="card-icon">&#x1f426;</div>
-        <div class="card-title">X 舆情监控</div>
-        <div class="card-desc">Track key X (Twitter) accounts with AI translation & sentiment</div>
-    </a>
-    <a class="card" href="/settings">
-        <div class="card-icon">&#x2699;</div>
-        <div class="card-title">Settings</div>
-        <div class="card-desc">Configure LLM models and API keys</div>
-    </a>
-    <a class="card" href="/docs">
-        <div class="card-icon">&#x1f4d6;</div>
-        <div class="card-title">API Docs</div>
-        <div class="card-desc">Swagger API documentation for developers</div>
-    </a>
-</div>
-
-<div class="footer">v1.0.0</div>
-</body>
-</html>"""
+    """后端 API 服务心跳 - 生产环境下 nginx 将 / 路由到 SPA 静态资源,此路由仅在直连 8000 端口时被命中。"""
+    return {
+        "service": "Stock AI Assistant API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "frontend": "请访问部署域名或本地 http://localhost:5173 (npm run dev)",
+    }

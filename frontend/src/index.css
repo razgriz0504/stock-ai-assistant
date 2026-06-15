@@ -119,3 +119,30 @@
     @apply text-copper underline underline-offset-2;
   }
 }
+
+/* 周报 PDF 导出：打印时隐藏导航、跳过选中 tab，全部章节连续输出 */
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm;
+  }
+  /* 隐藏侧边栏 / 顶部导航 / 表单控件 / 页内选股器 / 导出按钮 */
+  body * { visibility: hidden; }
+  .report-print, .report-print * { visibility: visible; }
+  .report-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .report-print .no-print { display: none !important; }
+  /* 章节之间分页控制：避免标题被切断 */
+  .report-print h1, .report-print h2, .report-print h3 {
+    page-break-after: avoid;
+  }
+  .report-print .report-section {
+    page-break-inside: avoid;
+    margin-bottom: 8mm;
+  }
+  .report-print table { page-break-inside: avoid; }
+}

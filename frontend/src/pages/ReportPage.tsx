@@ -43,6 +43,7 @@ const sections = [
 export default function ReportPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [activeSection, setActiveSection] = useState('market')
+  const [printMode, setPrintMode] = useState(false)
 
   // Versions list
   const { data: versions } = useQuery<ReportVersion[]>({
@@ -58,18 +59,39 @@ export default function ReportPage() {
     enabled: !!reportId,
   })
 
+  /**
+   * 导出 PDF：打印前临时开启 printMode（让全部 section 同时渲染），
+   * 依靠 print stylesheet 仅显示 `.report-print` 区域，完成后复原。
+   */
+  const handleExportPdf = () => {
+    if (!report) return
+    setPrintMode(true)
+    // 等一个 tick 让 React 完成重渲染后再调用打印
+    setTimeout(() => {
+      window.print()
+      setPrintMode(false)
+    }, 100)
+  }
+
   return (
-    <div>
+    <div className="report-print">
       {/* Header */}
       <div className="flex items-end justify-between mb-8">
         <div>
-          <span className="section-label flex items-center gap-2 mb-3">
+          <span className="section-label flex items-center gap-2 mb-3 no-print">
             <span className="w-1.5 h-1.5 rounded-full bg-copper inline-block" />
             Weekly Report
           </span>
-          <h1 className="page-title">投研<span className="text-copper">周报</span></h1>
+          <h1 className="page-title">
+            投研<span className="text-copper">周报</span>
+            {report?.report_date && (
+              <span className="ml-3 text-xs font-mono text-gray-400 align-middle">
+                {report.report_date.slice(0, 10)}
+              </span>
+            )}
+          </h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 no-print">
           <select
             value={reportId || ''}
             onChange={e => setSelectedId(Number(e.target.value))}
@@ -81,6 +103,9 @@ export default function ReportPage() {
               </option>
             ))}
           </select>
+          <Button size="sm" variant="secondary" onClick={handleExportPdf} disabled={!report}>
+            导出 PDF
+          </Button>
           <Button size="sm" onClick={() => window.open('/report-admin', '_self')}>
             管理
           </Button>
@@ -94,7 +119,7 @@ export default function ReportPage() {
       ) : (
         <div className="flex gap-6">
           {/* Section nav */}
-          <nav className="hidden lg:block w-[180px] shrink-0 sticky top-8 self-start">
+          <nav className="hidden lg:block w-[180px] shrink-0 sticky top-8 self-start no-print">
             <div className="space-y-1">
               {sections.map(s => (
                 <button
@@ -116,7 +141,7 @@ export default function ReportPage() {
           {/* Content */}
           <div className="flex-1 min-w-0 space-y-8">
             {/* Market */}
-            {(activeSection === 'market' || !activeSection) && (
+            {(printMode || activeSection === 'market' || !activeSection) && (
               <ReportSection num="01" title="大盘综述">
                 {report.market.indices && report.market.indices.length > 0 && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -141,31 +166,31 @@ export default function ReportPage() {
               </ReportSection>
             )}
 
-            {activeSection === 'capital' && (
+            {(printMode || activeSection === 'capital') && (
               <ReportSection num="02" title="资金面分析">
                 <AiSummary text={report.capital.ai_capital_summary} />
               </ReportSection>
             )}
 
-            {activeSection === 'geopolitics' && (
+            {(printMode || activeSection === 'geopolitics') && (
               <ReportSection num="03" title="国际局势">
                 <AiSummary text={report.geopolitics.ai_geopolitics_summary} />
               </ReportSection>
             )}
 
-            {activeSection === 'yield_curve' && (
+            {(printMode || activeSection === 'yield_curve') && (
               <ReportSection num="04" title="收益率曲线">
                 <AiSummary text={report.yield_curve.ai_yield_curve_summary} />
               </ReportSection>
             )}
 
-            {activeSection === 'sector_strength' && (
+            {(printMode || activeSection === 'sector_strength') && (
               <ReportSection num="05" title="板块强度">
                 <AiSummary text={report.sector_strength?.ai_sector_strength_summary} />
               </ReportSection>
             )}
 
-            {activeSection === 'sector' && (
+            {(printMode || activeSection === 'sector') && (
               <ReportSection num="06" title="行业轮动">
                 {report.sector.sectors && report.sector.sectors.length > 0 && (
                   <div className="mb-6 overflow-x-auto">
@@ -195,14 +220,14 @@ export default function ReportPage() {
               </ReportSection>
             )}
 
-            {activeSection === 'stocks' && (
+            {(printMode || activeSection === 'stocks') && (
               <ReportSection num="07" title="个股评分">
                 <StockScores label="关注列表" scores={report.stocks.watchlist_scores} />
                 <StockScores label="热门股票" scores={report.stocks.hot_stock_scores} />
               </ReportSection>
             )}
 
-            {activeSection === 'x_monitor' && (
+            {(printMode || activeSection === 'x_monitor') && (
               <ReportSection num="08" title="X 舆情">
                 <AiSummary text={report.x_monitor?.ai_x_monitor_summary} />
               </ReportSection>
@@ -216,7 +241,7 @@ export default function ReportPage() {
 
 function ReportSection({ num, title, children }: { num: string; title: string; children: React.ReactNode }) {
   return (
-    <div>
+    <div className="report-section">
       <div className="flex items-baseline gap-3 mb-6">
         <span className="font-mono text-xs text-copper tracking-wider">{num}</span>
         <h2 className="font-heading text-xl font-semibold">{title}</h2>
