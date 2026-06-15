@@ -131,6 +131,7 @@ async def start_generate(
         stocks_system_prompt=stocks_prompt,
         yield_curve_system_prompt=yield_curve_prompt,
         x_monitor_system_prompt=x_monitor_prompt,
+        sector_strength_system_prompt=sector_strength_prompt,
         watchlist_used=_json.dumps(watchlist),
     )
     db.add(report)
@@ -139,13 +140,28 @@ async def start_generate(
     report_id = report.id
 
     # 后台任务执行实际生成
-    background_tasks.add_task(_run_generate, report_id, watchlist, market_prompt, capital_prompt, geopolitics_prompt, sector_prompt, yield_curve_prompt, x_monitor_prompt)
+    background_tasks.add_task(
+        _run_generate,
+        report_id, watchlist,
+        market_prompt, capital_prompt, geopolitics_prompt, sector_prompt,
+        yield_curve_prompt, x_monitor_prompt, sector_strength_prompt,
+    )
 
     return {"report_id": report_id, "version": version, "status": "running"}
 
 
-async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str, capital_prompt: str, geopolitics_prompt: str, sector_prompt: str, yield_curve_prompt: str, x_monitor_prompt: str):
-    """后台任务：执行报告生成"""
+async def _run_generate(
+    report_id: int,
+    watchlist: list[str],
+    market_prompt: str,
+    capital_prompt: str,
+    geopolitics_prompt: str,
+    sector_prompt: str,
+    yield_curve_prompt: str,
+    x_monitor_prompt: str,
+    sector_strength_prompt: str,
+):
+    """后台任务：执行报告生成（与 generate_full_report 同步路径产物对齐）"""
     db = SessionLocal()
     try:
         report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
@@ -160,15 +176,18 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
             get_report_section_stocks,
             generate_ai_market_summary, generate_ai_capital_summary, generate_ai_geopolitics_summary, generate_ai_sector_summary,
             generate_ai_yield_curve_summary, generate_ai_x_monitor_summary,
+            generate_ai_sector_strength_summary,
         )
+        from app.data.sector_strength import fetch_enhanced_sector_data
 
         # 并行获取数据
-        index_data, sector_data, stocks_data, curve_data, x_data = await asyncio.gather(
+        index_data, sector_data, stocks_data, curve_data, x_data, enhanced_sector_data = await asyncio.gather(
             asyncio.to_thread(fetch_index_data),
             asyncio.to_thread(fetch_sector_data),
             get_report_section_stocks(watchlist),
             asyncio.to_thread(fetch_yield_curve_data),
             asyncio.to_thread(fetch_x_tweets_data, db, 7),
+            asyncio.to_thread(fetch_enhanced_sector_data, False),
         )
 
         # AI 分析
@@ -179,6 +198,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
             ai_sector_summary,
             ai_yield_curve_summary,
             ai_x_monitor_summary,
+            ai_sector_strength_summary,
         ) = await asyncio.gather(
             generate_ai_market_summary(index_data, system_prompt=market_prompt),
             generate_ai_capital_summary(system_prompt=capital_prompt),
@@ -186,6 +206,7 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
             generate_ai_sector_summary(sector_data, system_prompt=sector_prompt),
             generate_ai_yield_curve_summary(curve_data, system_prompt=yield_curve_prompt),
             generate_ai_x_monitor_summary(x_data, system_prompt=x_monitor_prompt),
+            generate_ai_sector_strength_summary(enhanced_sector_data, system_prompt=sector_strength_prompt),
         )
 
         # 序列化写入 DB
@@ -195,12 +216,14 @@ async def _run_generate(report_id: int, watchlist: list[str], market_prompt: str
         report.hot_stock_scores = json.dumps(stocks_data.get("hot_stock_scores", []), ensure_ascii=False)
         report.yield_curve_data = json.dumps(curve_data, ensure_ascii=False)
         report.x_tweets_data = json.dumps(x_data, ensure_ascii=False)
+        report.enhanced_sector_data = json.dumps(enhanced_sector_data, ensure_ascii=False)
         report.ai_market_summary = ai_market_summary
         report.ai_capital_summary = ai_capital_summary
         report.ai_geopolitics_summary = ai_geopolitics_summary
         report.ai_sector_summary = ai_sector_summary
         report.ai_yield_curve_summary = ai_yield_curve_summary
         report.ai_x_monitor_summary = ai_x_monitor_summary
+        report.ai_sector_strength_summary = ai_sector_strength_summary
         report.status = "completed"
         db.commit()
 
