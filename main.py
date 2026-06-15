@@ -18,6 +18,7 @@ from app.api.report_admin_page import router as report_admin_router
 from app.api.screener_page import router as screener_router
 from app.api.x_monitor_page import router as x_monitor_router
 from app.api.sector_strength_page import router as sector_strength_router
+from app.api.dashboard_page import router as dashboard_router
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,
@@ -90,6 +91,7 @@ app.include_router(report_admin_router)
 app.include_router(screener_router)
 app.include_router(x_monitor_router)
 app.include_router(sector_strength_router)
+app.include_router(dashboard_router)
 
 
 @app.get("/", response_class=HTMLResponse)
