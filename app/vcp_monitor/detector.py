@@ -97,7 +97,12 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
         vol_sma20 = float(df["Volume"].iloc[-20:].mean()) if len(df) >= 20 else float(df["Volume"].mean())
 
         if last_close > pivot_price and last_volume > 1.5 * vol_sma20:
-            status = "breakout"
+            # Check if already extended beyond pivot (> 5% above pivot = too late)
+            extension_pct = (last_close - pivot_price) / pivot_price * 100
+            if extension_pct > 5.0:
+                status = "extended"  # Too far above pivot, not actionable
+            else:
+                status = "breakout"
         elif last_close < contractions[-1].low:
             status = "failed"
         else:
@@ -259,8 +264,9 @@ def _validate_contractions(contractions: list[Contraction]) -> bool:
     Rules:
     - At least 2 contractions
     - T1 depth between 10% and 40%
-    - Each subsequent contraction is smaller (diminishing with tolerance)
-    - Overall pattern shows tightening
+    - Strict monotonic decrease with ±1% tolerance (no expansion allowed)
+    - Last contraction must be < 5% (筹码锁死)
+    - Overall pattern shows clear tightening (last < 50% of first)
     """
     if len(contractions) < 2:
         return False
@@ -270,19 +276,30 @@ def _validate_contractions(contractions: list[Contraction]) -> bool:
     if t1_depth < 10 or t1_depth > 40:
         return False
 
-    # Check diminishing pattern (allow some tolerance)
-    diminishing_count = 0
+    # ── Strict monotonic decrease check ──
+    # Each contraction must be <= previous + tolerance (1%)
+    # Allow AT MOST one violation across the entire sequence
+    TOLERANCE_PCT = 1.0  # Allow 1% overshoot
+    violations = 0
     for i in range(1, len(contractions)):
-        if contractions[i].depth_pct < contractions[i - 1].depth_pct:
-            diminishing_count += 1
+        curr = contractions[i].depth_pct
+        prev = contractions[i - 1].depth_pct
+        if curr > prev + TOLERANCE_PCT:
+            violations += 1
 
-    # At least half must be diminishing (tolerance for noise)
-    if diminishing_count < (len(contractions) - 1) * 0.5:
+    # Zero tolerance for expansion when we have few contractions
+    # Allow 1 violation only if we have 4+ contractions
+    max_allowed_violations = 1 if len(contractions) >= 4 else 0
+    if violations > max_allowed_violations:
         return False
 
-    # Last contraction must be significantly smaller than first
+    # ── Last contraction must be tight (< 5%) ──
     last_depth = contractions[-1].depth_pct
-    if last_depth >= t1_depth * 0.85:  # Must be at least 15% smaller
+    if last_depth >= 5.0:
+        return False
+
+    # ── Overall tightening: last must be < 50% of first ──
+    if last_depth >= t1_depth * 0.50:
         return False
 
     return True
@@ -351,11 +368,13 @@ def _calculate_score(
 
     # 5. Final tightness (15 pts) - last contraction depth
     last_depth = contractions[-1].depth_pct
-    if last_depth < 8:
+    if last_depth < 2:
         score += 15
-    elif last_depth < 12:
-        score += 10
-    elif last_depth < 15:
+    elif last_depth < 3:
+        score += 12
+    elif last_depth < 4:
+        score += 8
+    elif last_depth < 5:
         score += 5
 
     # 6. Contraction count (10 pts)

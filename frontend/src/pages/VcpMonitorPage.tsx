@@ -161,6 +161,7 @@ function ResultsTab() {
   const statusColor = (status: string): "default" | "success" | "danger" | "warning" | "copper" => {
     if (status === 'breakout') return 'success'
     if (status === 'failed') return 'danger'
+    if (status === 'extended') return 'copper'
     return 'warning'
   }
 
