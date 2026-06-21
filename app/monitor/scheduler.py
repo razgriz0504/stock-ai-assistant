@@ -378,3 +378,71 @@ def restore_x_monitor_schedule():
         logger.error(f"Failed to restore X monitor schedule: {e}")
     finally:
         db.close()
+
+
+# ─── VCP 监控定时任务 ───
+
+def add_vcp_scan_job(hour: int = 17, minute: int = 0):
+    """添加/更新 VCP 扫描定时任务（美东收盘后运行）"""
+    scheduler.add_job(
+        _run_vcp_scan_job,
+        CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=ET),
+        id="vcp_scan_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"VCP scan job scheduled at {hour:02d}:{minute:02d} ET (mon-fri)")
+
+
+def remove_vcp_scan_job():
+    """移除 VCP 扫描定时任务"""
+    try:
+        scheduler.remove_job("vcp_scan_scheduled")
+        logger.info("VCP scan job removed")
+    except Exception:
+        pass
+
+
+def add_rs_daily_job(hour: int = 16, minute: int = 30):
+    """添加/更新 RS Percentile 每日预计算任务"""
+    scheduler.add_job(
+        _run_rs_daily_job,
+        CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=ET),
+        id="rs_daily_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"RS daily job scheduled at {hour:02d}:{minute:02d} ET (mon-fri)")
+
+
+async def _run_vcp_scan_job():
+    """定时 VCP 扫描任务"""
+    from app.vcp_monitor.scanner import run_vcp_scan
+
+    logger.info("Scheduled VCP scan job triggered")
+    try:
+        run_id = await run_vcp_scan(trigger="scheduled")
+        logger.info(f"Scheduled VCP scan completed: run_id={run_id}")
+    except Exception as e:
+        logger.error(f"Scheduled VCP scan job error: {e}", exc_info=True)
+
+
+async def _run_rs_daily_job():
+    """定时 RS Percentile 预计算任务"""
+    from app.data.rs_rating import compute_rs_snapshot
+    from app.screener.universe import get_universe
+
+    logger.info("Scheduled RS daily computation triggered")
+    try:
+        universe = get_universe()
+        result = compute_rs_snapshot(universe)
+        logger.info(f"RS daily computation completed: {len(result)} stocks")
+    except Exception as e:
+        logger.error(f"RS daily job error: {e}", exc_info=True)
+
+
+def restore_vcp_schedule():
+    """启动时恢复 VCP 相关定时任务"""
+    # RS 预计算 16:30 ET
+    add_rs_daily_job(hour=16, minute=30)
+    # VCP 扫描 17:00 ET
+    add_vcp_scan_job(hour=17, minute=0)
+    logger.info("VCP schedule restored (RS 16:30, scan 17:00 ET)")

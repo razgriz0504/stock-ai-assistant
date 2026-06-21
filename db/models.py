@@ -331,6 +331,69 @@ def get_db():
 
 
 # ═══════════════════════════════════════════════════════════════
+# VCP (Volatility Contraction Pattern) 监控相关表
+# ═══════════════════════════════════════════════════════════════
+
+class VcpWatchlist(Base):
+    """VCP 监控标的列表"""
+    __tablename__ = "vcp_watchlist"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    source = Column(String(20), default="manual")       # "auto" / "manual"
+    auto_seeded = Column(Boolean, default=False)         # 是否由 SEPA 自动种子加入
+    enabled = Column(Boolean, default=True)
+    note = Column(String(200), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_triggered_at = Column(DateTime, nullable=True)  # 最后一次触发信号的时间
+
+
+class VcpScanRun(Base):
+    """VCP 扫描批次记录"""
+    __tablename__ = "vcp_scan_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    trigger = Column(String(20), default="manual")       # "manual" / "scheduled"
+    status = Column(String(20), default="running")       # "running" / "completed" / "failed"
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime, nullable=True)
+    total = Column(Integer, default=0)                   # 扫描总数
+    detected = Column(Integer, default=0)                # 检测到 VCP 形态的数量
+    error_message = Column(Text, default="")
+
+
+class VcpScanResult(Base):
+    """VCP 单只股票扫描结果"""
+    __tablename__ = "vcp_scan_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    run_id = Column(Integer, nullable=False, index=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    status = Column(String(20), default="forming")       # "forming" / "breakout" / "failed"
+    score = Column(Integer, default=0)                   # 0-100 质量评分
+    pivot_price = Column(Float, nullable=True)
+    contractions_json = Column(Text, default="[]")       # JSON: 收缩序列坐标
+    volume_dry_ratio = Column(Float, nullable=True)      # 量能干枯比
+    rs_percentile = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class VcpAlert(Base):
+    """VCP 告警记录"""
+    __tablename__ = "vcp_alerts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    symbol = Column(String(10), nullable=False, index=True)
+    alert_type = Column(String(20), default="breakout")  # "breakout"
+    pivot_price = Column(Float, nullable=True)
+    breakout_price = Column(Float, nullable=True)
+    volume_ratio = Column(Float, nullable=True)          # 突破时量比
+    prior_failed = Column(Boolean, default=False)        # 本次前是否经历过 failed
+    sent_feishu = Column(Boolean, default=False)
+    alerted_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ═══════════════════════════════════════════════════════════════
 # 默认 X 监控账号种子
 # ═══════════════════════════════════════════════════════════════
 

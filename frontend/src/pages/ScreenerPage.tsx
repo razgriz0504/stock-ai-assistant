@@ -11,7 +11,7 @@ import { getCnName, getCnSector } from '@/data/cnNames'
 interface FilterDef {
   key: string
   label: string
-  category: 'trend_continuation' | 'trend_initiation' | 'auxiliary' | 'fundamental'
+  category: 'sepa' | 'trend_continuation' | 'trend_initiation' | 'auxiliary' | 'fundamental'
   params?: ParamDef[]
 }
 
@@ -28,6 +28,34 @@ interface ParamDef {
 }
 
 const FILTERS: FilterDef[] = [
+  // SEPA (Mark Minervini Stage 2)
+  {
+    key: 'sepa_ma_position', label: '均线多头排列', category: 'sepa',
+  },
+  {
+    key: 'sepa_sma200_trend', label: '200日线上升趋势', category: 'sepa',
+    params: [
+      { id: 'lookback_days', label: '回溯天数', type: 'number', default: 22, min: 10, max: 60 },
+    ],
+  },
+  {
+    key: 'sepa_52w_low', label: '距52周低点涨幅', category: 'sepa',
+    params: [
+      { id: 'min_pct', label: '最低%', type: 'number', default: 25, min: 10, max: 100, step: 5 },
+    ],
+  },
+  {
+    key: 'sepa_52w_high', label: '距52周高点回撤', category: 'sepa',
+    params: [
+      { id: 'max_pct', label: '最大%', type: 'number', default: 25, min: 5, max: 50, step: 5 },
+    ],
+  },
+  {
+    key: 'sepa_rs_rating', label: '相对强度排名', category: 'sepa',
+    params: [
+      { id: 'min_rs', label: '最低RS', type: 'number', default: 70, min: 50, max: 99 },
+    ],
+  },
   // 趋势延续
   {
     key: 'ma_arrangement', label: 'EMA Arrangement', category: 'trend_continuation',
@@ -128,6 +156,7 @@ const FILTERS: FilterDef[] = [
 ]
 
 const CATEGORY_LABELS = {
+  sepa: { icon: '🏆', title: 'SEPA 趋势模板', desc: 'Minervini Stage 2' },
   trend_continuation: { icon: '📈', title: '趋势延续', desc: '已确立上升趋势' },
   trend_initiation: { icon: '🚀', title: '趋势启动', desc: '刚开始上涨' },
   auxiliary: { icon: '🔧', title: '辅助指标', desc: '' },
@@ -323,7 +352,7 @@ function RunTab() {
   }, [searchParams, setSearchParams, setFilters, startRun, startPolling])
 
   // Group filters by category
-  const categories = ['trend_continuation', 'trend_initiation', 'auxiliary', 'fundamental'] as const
+  const categories = ['sepa', 'trend_continuation', 'trend_initiation', 'auxiliary', 'fundamental'] as const
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6">
@@ -332,6 +361,31 @@ function RunTab() {
         {/* Presets */}
         <Card>
           <CardHeader title="预设策略" />
+          {/* System Presets - 系统模板 */}
+          <div className="mb-3 pb-3 border-b border-cream-200">
+            <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 px-1">系统模板</p>
+            <div
+              className="flex items-center gap-2.5 px-3 py-2 rounded-md cursor-pointer transition-all text-sm hover:bg-orange-50 hover:border-copper/20 border border-transparent"
+              onClick={() => {
+                const sepaState: Record<string, Record<string, unknown>> = {
+                  sepa_ma_position: { enabled: true },
+                  sepa_sma200_trend: { enabled: true, lookback_days: 22 },
+                  sepa_52w_low: { enabled: true, min_pct: 25 },
+                  sepa_52w_high: { enabled: true, max_pct: 25 },
+                  sepa_rs_rating: { enabled: true, min_rs: 70 },
+                }
+                setFilterState(sepaState)
+              }}
+            >
+              <span>🏆</span>
+              <div>
+                <span className="font-medium">SEPA 趋势选股</span>
+                <span className="text-[10px] text-gray-400 ml-2">Minervini Stage 2</span>
+              </div>
+            </div>
+          </div>
+          {/* User Presets - 我的预设 */}
+          <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-1.5 px-1">我的预设</p>
           <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
             {presets.map((p: ScreenerPreset) => (
               <div

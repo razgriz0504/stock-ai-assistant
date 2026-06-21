@@ -16,6 +16,7 @@ from app.data.yfinance_provider import YFinanceProvider
 from app.screener.universe import get_universe
 from app.screener.filters import apply_fundamental_filters, apply_technical_filters
 from app.analysis.stock_analyzer import calculate_score
+from app.data.rs_rating import get_rs_snapshot, compute_rs_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,10 @@ def _compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
     for length in [5, 10, 20, 60, 120]:
         df.ta.sma(length=length, append=True)
+    # SEPA 所需的长期均线
+    df.ta.sma(length=50, append=True)
+    df.ta.sma(length=150, append=True)
+    df.ta.sma(length=200, append=True)
     df.ta.ema(length=5, append=True)
     df.ta.ema(length=10, append=True)
     df.ta.ema(length=12, append=True)
@@ -219,10 +224,23 @@ async def _execute_screener(
         total = len(symbols_to_scan)
         filter_fail_counts: dict[str, int] = {}  # Track which filter rejects most stocks
 
+        # Pre-compute RS percentile if SEPA RS filter is enabled
+        rs_snapshot: dict[str, float] = {}
+        technical_config = filters_config.get("technical", {})
+        if technical_config.get("sepa_rs_rating", {}).get("enabled", False):
+            rs_snapshot = await asyncio.to_thread(
+                get_rs_snapshot, symbols_to_scan
+            )
+            logger.info(f"RS snapshot loaded: {len(rs_snapshot)} stocks")
+
         for idx, sym in enumerate(symbols_to_scan):
             try:
                 info = fundamentals.get(sym, {})
                 df = history_data.get(sym, pd.DataFrame())
+
+                # Inject RS percentile into info for SEPA filter
+                if rs_snapshot:
+                    info["rs_percentile"] = rs_snapshot.get(sym, 0.0)
 
                 filter_details = {}
                 passed = True

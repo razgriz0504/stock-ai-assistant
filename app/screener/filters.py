@@ -12,6 +12,7 @@ Where:
 import logging
 import pandas as pd
 import numpy as np
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +281,132 @@ def filter_atr_filter(df: pd.DataFrame, info: dict, params: dict) -> bool:
     return bool(min_pct <= atr_pct <= max_pct)
 
 
+# ═══════════════════════════════════════════════════════════════
+# SEPA (Stage 2 Uptrend) Filters — Mark Minervini
+# ═══════════════════════════════════════════════════════════════
+
+def filter_sepa_ma_position(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """SEPA 均线多头排列: Price > SMA50 > SMA150 > SMA200, 且 SMA150 > SMA200.
+
+    这是 Minervini 的核心条件，确保股票处于 Stage 2 上升趋势。
+    params: {} (固定逻辑，无可调参数)
+    """
+    if len(df) < 200:
+        return False
+
+    last = df.iloc[-1]
+    close = last["Close"]
+
+    sma50 = last.get("SMA_50")
+    sma150 = last.get("SMA_150")
+    sma200 = last.get("SMA_200")
+
+    if any(v is None or pd.isna(v) for v in [sma50, sma150, sma200]):
+        return False
+
+    # Price > SMA50 > SMA150 > SMA200
+    if not (close > sma50 > sma150 > sma200):
+        return False
+
+    return True
+
+
+def filter_sepa_sma200_trend(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """SEPA 200日线上升趋势: 使用线性回归斜率法判定.
+
+    对最近 N 天的 SMA200 做线性回归，要求:
+    1. slope > 0（整体上升）
+    2. SMA200[今天] >= SMA200[-5天]（近期没掉头）
+
+    这种方法容忍微小波动，避免因 $0.01 的抖动误杀牛股。
+    params: {"lookback_days": 22}
+    """
+    lookback = params.get("lookback_days", 22)
+
+    if len(df) < 200 + lookback:
+        return False
+
+    sma200_col = "SMA_200"
+    if sma200_col not in df.columns:
+        return False
+
+    sma200_series = df[sma200_col].iloc[-lookback:]
+    if sma200_series.isna().any():
+        return False
+
+    # 线性回归斜率
+    x = np.arange(len(sma200_series))
+    y = sma200_series.values.astype(float)
+    slope, _, _, _, _ = stats.linregress(x, y)
+
+    if slope <= 0:
+        return False
+
+    # 端点校验：近 5 天没掉头
+    sma200_now = float(df[sma200_col].iloc[-1])
+    sma200_5d_ago = float(df[sma200_col].iloc[-5])
+    if sma200_now < sma200_5d_ago:
+        return False
+
+    return True
+
+
+def filter_sepa_52w_low(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """SEPA 距52周低点涨幅: (Price - 52wLow) / 52wLow >= min_pct%.
+
+    确保股票已经脱离底部，涨幅足够说明趋势确立。
+    params: {"min_pct": 25}
+    """
+    min_pct = params.get("min_pct", 25)
+
+    if len(df) < 200:
+        return False
+
+    close = float(df.iloc[-1]["Close"])
+    # 计算52周（约252交易日）低点
+    lookback_252 = min(252, len(df))
+    low_52w = float(df["Low"].iloc[-lookback_252:].min())
+
+    if low_52w <= 0:
+        return False
+
+    pct_above_low = ((close - low_52w) / low_52w) * 100
+    return bool(pct_above_low >= min_pct)
+
+
+def filter_sepa_52w_high(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """SEPA 距52周高点回撤: (52wHigh - Price) / 52wHigh <= max_pct%.
+
+    确保股票离高点不远，处于强势区间（最好正在创新高）。
+    params: {"max_pct": 25}
+    """
+    max_pct = params.get("max_pct", 25)
+
+    if len(df) < 200:
+        return False
+
+    close = float(df.iloc[-1]["Close"])
+    lookback_252 = min(252, len(df))
+    high_52w = float(df["High"].iloc[-lookback_252:].max())
+
+    if high_52w <= 0:
+        return False
+
+    pct_below_high = ((high_52w - close) / high_52w) * 100
+    return bool(pct_below_high <= max_pct)
+
+
+def filter_sepa_rs_rating(df: pd.DataFrame, info: dict, params: dict) -> bool:
+    """SEPA 相对强度排名: RS Percentile >= min_rs.
+
+    RS 来自预计算快照（engine 注入到 info["rs_percentile"]）。
+    params: {"min_rs": 70}
+    """
+    min_rs = params.get("min_rs", 70)
+    rs = info.get("rs_percentile", 0.0)
+    return bool(rs >= min_rs)
+
+
 def filter_trend_initiation(df: pd.DataFrame, info: dict, params: dict) -> bool:
     """Trend initiation filter: detects stocks just starting an uptrend.
 
@@ -456,6 +583,12 @@ TECHNICAL_FILTERS = {
     "rsi_zone": filter_rsi_zone,
     "bb_squeeze": filter_bb_squeeze,
     "atr_filter": filter_atr_filter,
+    # SEPA (Mark Minervini Stage 2) filters
+    "sepa_ma_position": filter_sepa_ma_position,
+    "sepa_sma200_trend": filter_sepa_sma200_trend,
+    "sepa_52w_low": filter_sepa_52w_low,
+    "sepa_52w_high": filter_sepa_52w_high,
+    "sepa_rs_rating": filter_sepa_rs_rating,
 }
 
 FUNDAMENTAL_FILTERS = {
