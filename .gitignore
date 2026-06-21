@@ -3,7 +3,7 @@ __pycache__/
 *.pyo
 .env
 db/stock_ai.db
-charts/
+/charts/
 *.egg-info/
 deploy_code.sh
 deploy_b64.txt
