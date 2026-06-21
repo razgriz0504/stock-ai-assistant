@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
@@ -589,6 +589,7 @@ function ResultsTab() {
   const { items: watchItems, fetch: fetchWatchlist, add: addWatch, remove: removeWatch } = useWatchlistStore()
   const [sortBy, setSortBy] = useState<string>('score')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [groupBySector, setGroupBySector] = useState(false)
   const [pendingSym, setPendingSym] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 
@@ -708,6 +709,17 @@ function ResultsTab() {
             共筛出 <span className="font-mono font-bold text-copper">{totalPassed}</span> 只股票
             {currentRunVersion && <span className="ml-2 text-xs text-cream-500">v{currentRunVersion}</span>}
           </p>
+          {/* Group by sector toggle */}
+          <button
+            onClick={() => setGroupBySector(!groupBySector)}
+            className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+              groupBySector
+                ? 'bg-copper text-white border-copper'
+                : 'bg-white text-gray-600 border-cream-300 hover:border-copper'
+            }`}
+          >
+            {groupBySector ? '✓ 按板块聚合' : '按板块聚合'}
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-cream-500">
@@ -749,60 +761,31 @@ function ResultsTab() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((r) => {
-                const watched = watchedSet.has(r.symbol)
-                const busy = pendingSym === r.symbol
-                return (
-                  <tr key={r.symbol} className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
-                    <td className="px-2 py-2 text-center">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => handleToggleWatch(r.symbol)}
-                        title={watched ? '点击取消关注' : `加入关注 (来源: ${sourceTag.replace('screener:', '')})`}
-                        className={`text-base leading-none transition-colors ${
-                          watched ? 'text-copper' : 'text-cream-400 hover:text-copper'
-                        } ${busy ? 'opacity-40 cursor-wait' : 'cursor-pointer'}`}
-                      >
-                        {watched ? '★' : '☆'}
-                      </button>
-                    </td>
-                    <td className="px-3 py-2 font-mono font-semibold text-xs">{r.symbol}</td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{getCnName(r.symbol, r.name)}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <Badge variant={r.score >= 70 ? 'success' : r.score >= 40 ? 'warning' : 'danger'}>
-                        {r.score?.toFixed(1)}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2"><Badge variant="copper">{r.rating || '-'}</Badge></td>
-                    {sepaColsToShow.map(col => {
-                      const val = (r.indicators as Record<string, unknown>)?.[col.key] as number | undefined
-                      return (
-                        <td key={col.key} className="px-3 py-2 text-right font-mono text-xs">
-                          {val != null ? (
-                            <span className={
-                              col.key === '_rs_percentile' ? (val >= 80 ? 'text-success font-medium' : val >= 70 ? 'text-copper' : 'text-gray-500')
-                              : col.key === '_52w_low_pct' ? (val >= 50 ? 'text-success' : 'text-gray-600')
-                              : col.key === '_52w_high_pct' ? (val <= 10 ? 'text-success font-medium' : val <= 25 ? 'text-copper' : 'text-danger')
-                              : col.key === '_sma200_slope' ? (val > 0 ? 'text-success' : 'text-danger')
-                              : ''
-                            }>
-                              {val.toFixed(1)}{col.key !== '_sma200_slope' ? '%' : ''}
-                            </span>
-                          ) : <span className="text-gray-300">-</span>}
-                        </td>
-                      )
-                    })}
-                    <td className="px-3 py-2 text-right font-mono text-xs">${r.price?.toFixed(2)}</td>
-                    <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${r.change_pct >= 0 ? 'text-success' : 'text-danger'}`}>
-                      {r.change_pct >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
-                    </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs">{r.pe_ratio?.toFixed(1) || '-'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-xs">{fmtCap(r.market_cap)}</td>
-                  </tr>
-                )
-              })}
+              {(() => {
+                if (!groupBySector) {
+                  // Flat list
+                  return sorted.map((r) => <ResultRow key={r.symbol} r={r} watchedSet={watchedSet} pendingSym={pendingSym} handleToggleWatch={handleToggleWatch} sourceTag={sourceTag} sepaColsToShow={sepaColsToShow} fmtCap={fmtCap} />)
+                }
+                // Group by sector
+                const groups: Record<string, typeof sorted> = {}
+                for (const r of sorted) {
+                  const sector = getCnSector(r.sector) || '未知'
+                  if (!groups[sector]) groups[sector] = []
+                  groups[sector].push(r)
+                }
+                // Sort groups by count (descending)
+                const sortedGroups = Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
+                return sortedGroups.map(([sector, items]) => (
+                  <Fragment key={sector}>
+                    <tr className="bg-cream-100/70">
+                      <td colSpan={10 + sepaColsToShow.length} className="px-3 py-2 text-xs font-semibold text-gray-700 border-b border-cream-300">
+                        {sector} <span className="ml-2 font-mono text-copper">({items.length})</span>
+                      </td>
+                    </tr>
+                    {items.map((r) => <ResultRow key={r.symbol} r={r} watchedSet={watchedSet} pendingSym={pendingSym} handleToggleWatch={handleToggleWatch} sourceTag={sourceTag} sepaColsToShow={sepaColsToShow} fmtCap={fmtCap} />)}
+                  </Fragment>
+                ))
+              })()}
               {results.length === 0 && (
                 <tr><td colSpan={10 + sepaColsToShow.length} className="text-center py-8 text-sm text-gray-400">暂无结果</td></tr>
               )}
@@ -811,6 +794,72 @@ function ResultsTab() {
         </div>
       </Card>
     </div>
+  )
+}
+
+// ── Result Row Component ──
+interface ResultRowProps {
+  r: import('@/stores/screenerStore').ScreenerResult
+  watchedSet: Set<string>
+  pendingSym: string | null
+  handleToggleWatch: (symbol: string) => void
+  sourceTag: string
+  sepaColsToShow: { key: string; label: string; tooltip: string }[]
+  fmtCap: (v: number) => string
+}
+
+function ResultRow({ r, watchedSet, pendingSym, handleToggleWatch, sourceTag, sepaColsToShow, fmtCap }: ResultRowProps) {
+  const watched = watchedSet.has(r.symbol)
+  const busy = pendingSym === r.symbol
+  return (
+    <tr className="border-b border-cream-200 hover:bg-cream-50 transition-colors">
+      <td className="px-2 py-2 text-center">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => handleToggleWatch(r.symbol)}
+          title={watched ? '点击取消关注' : `加入关注 (来源: ${sourceTag.replace('screener:', '')})`}
+          className={`text-base leading-none transition-colors ${
+            watched ? 'text-copper' : 'text-cream-400 hover:text-copper'
+          } ${busy ? 'opacity-40 cursor-wait' : 'cursor-pointer'}`}
+        >
+          {watched ? '★' : '☆'}
+        </button>
+      </td>
+      <td className="px-3 py-2 font-mono font-semibold text-xs">{r.symbol}</td>
+      <td className="px-3 py-2 text-xs text-gray-600">{getCnName(r.symbol, r.name)}</td>
+      <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
+      <td className="px-3 py-2 text-right">
+        <Badge variant={r.score >= 70 ? 'success' : r.score >= 40 ? 'warning' : 'danger'}>
+          {r.score?.toFixed(1)}
+        </Badge>
+      </td>
+      <td className="px-3 py-2"><Badge variant="copper">{r.rating || '-'}</Badge></td>
+      {sepaColsToShow.map(col => {
+        const val = (r.indicators as Record<string, unknown>)?.[col.key] as number | undefined
+        return (
+          <td key={col.key} className="px-3 py-2 text-right font-mono text-xs">
+            {val != null ? (
+              <span className={
+                col.key === '_rs_percentile' ? (val >= 80 ? 'text-success font-medium' : val >= 70 ? 'text-copper' : 'text-gray-500')
+                : col.key === '_52w_low_pct' ? (val >= 50 ? 'text-success' : 'text-gray-600')
+                : col.key === '_52w_high_pct' ? (val <= 10 ? 'text-success font-medium' : val <= 25 ? 'text-copper' : 'text-danger')
+                : col.key === '_sma200_slope' ? (val > 0 ? 'text-success' : 'text-danger')
+                : ''
+              }>
+                {val.toFixed(1)}{col.key !== '_sma200_slope' ? '%' : ''}
+              </span>
+            ) : <span className="text-gray-300">-</span>}
+          </td>
+        )
+      })}
+      <td className="px-3 py-2 text-right font-mono text-xs">${r.price?.toFixed(2)}</td>
+      <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${r.change_pct >= 0 ? 'text-success' : 'text-danger'}`}>
+        {r.change_pct >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
+      </td>
+      <td className="px-3 py-2 text-right font-mono text-xs">{r.pe_ratio?.toFixed(1) || '-'}</td>
+      <td className="px-3 py-2 text-right font-mono text-xs">{fmtCap(r.market_cap)}</td>
+    </tr>
   )
 }
 
