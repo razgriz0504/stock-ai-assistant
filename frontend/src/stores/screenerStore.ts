@@ -31,6 +31,7 @@ export interface ScreenerRun {
   total_stocks: number
   passed_stocks: number
   started_at: string | null
+  filters_json: string
 }
 
 export interface ScreenerPreset {
@@ -51,6 +52,8 @@ interface ScreenerState {
   // Results
   results: ScreenerResult[]
   totalPassed: number
+  currentRunFilters: string  // filters_json of currently viewed run
+  currentRunVersion: number | null  // version of currently viewed run
 
   // Runs history
   runs: ScreenerRun[]
@@ -88,6 +91,8 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
   errorMessage: null,
   results: [],
   totalPassed: 0,
+  currentRunFilters: '{}',
+  currentRunVersion: null,
   runs: [],
   presets: [],
   activePresetId: null,
@@ -152,7 +157,12 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
     if (!runId) return
     try {
       const res = await api.get(`/api/screener/results/${runId}`)
-      set({ results: res.data.results, totalPassed: res.data.total_passed })
+      set({
+        results: res.data.results,
+        totalPassed: res.data.total_passed,
+        currentRunFilters: res.data.filters_json || '{}',
+        currentRunVersion: res.data.version ?? null,
+      })
     } catch { /* ignore */ }
   },
 
@@ -160,7 +170,12 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
     set({ runId: id, status: 'success', results: [], totalPassed: 0 })
     try {
       const res = await api.get(`/api/screener/results/${id}`)
-      set({ results: res.data.results, totalPassed: res.data.total_passed })
+      set({
+        results: res.data.results,
+        totalPassed: res.data.total_passed,
+        currentRunFilters: res.data.filters_json || '{}',
+        currentRunVersion: res.data.version ?? null,
+      })
     } catch { /* ignore */ }
   },
 
@@ -209,5 +224,7 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
     errorMessage: null,
     results: [],
     totalPassed: 0,
+    currentRunFilters: '{}',
+    currentRunVersion: null,
   }),
 }))

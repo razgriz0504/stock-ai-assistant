@@ -108,6 +108,10 @@ async def get_results(run_id: int, sort_by: str = "score", order: str = "desc"):
     """Get screener results for a run (only passed stocks)."""
     db = SessionLocal()
     try:
+        run = db.query(ScreenerRun).filter_by(id=run_id).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="Run not found")
+
         results = db.query(ScreenerResult).filter_by(run_id=run_id, passed=True).all()
         data = []
         for r in results:
@@ -137,7 +141,13 @@ async def get_results(run_id: int, sort_by: str = "score", order: str = "desc"):
         else:
             data.sort(key=lambda x: x.get("score") or 0, reverse=True)
 
-        return {"run_id": run_id, "total_passed": len(data), "results": data}
+        return {
+            "run_id": run_id,
+            "version": run.version,
+            "total_passed": len(data),
+            "filters_json": run.filters_json or "{}",
+            "results": data,
+        }
     finally:
         db.close()
 
@@ -157,6 +167,7 @@ async def list_runs():
                 "total_stocks": r.total_stocks,
                 "passed_stocks": r.passed_stocks,
                 "started_at": r.started_at.isoformat() if r.started_at else None,
+                "filters_json": r.filters_json or "{}",
             }
             for r in runs
         ]

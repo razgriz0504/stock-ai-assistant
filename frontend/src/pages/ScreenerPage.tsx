@@ -193,7 +193,7 @@ export default function ScreenerPage() {
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       <div className="mt-6">
-        {activeTab === 'run' && <RunTab />}
+        {activeTab === 'run' && <RunTab onViewResults={() => setActiveTab('results')} />}
         {activeTab === 'results' && <ResultsTab />}
         {activeTab === 'history' && <HistoryTab onViewResults={() => setActiveTab('results')} />}
         {activeTab === 'schedule' && <ScheduleTab />}
@@ -205,7 +205,7 @@ export default function ScreenerPage() {
 // ═══════════════════════════════════════════════════════════════
 // Run Tab - Interactive Filter Panel + Presets
 // ═══════════════════════════════════════════════════════════════
-function RunTab() {
+function RunTab({ onViewResults }: { onViewResults: () => void }) {
   const {
     status, progress, errorMessage,
     presets, activePresetId, customCode,
@@ -533,7 +533,12 @@ function RunTab() {
               )}
             </div>
             {(status === 'success' || status === 'failed') && (
-              <Button size="sm" variant="ghost" onClick={reset}>重置</Button>
+              <div className="flex items-center gap-2">
+                {status === 'success' && (
+                  <Button size="sm" variant="primary" onClick={onViewResults}>查看结果 →</Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={reset}>重置</Button>
+              </div>
             )}
           </div>
         )}
@@ -570,16 +575,26 @@ function RunTab() {
 // ═══════════════════════════════════════════════════════════════
 // Results Tab
 // ═══════════════════════════════════════════════════════════════
+
+// SEPA indicator column definitions (shown when SEPA filters are active)
+const SEPA_INDICATOR_COLS = [
+  { key: '_rs_percentile', label: 'RS%', tooltip: '相对强度百分位' },
+  { key: '_52w_low_pct', label: '距52周低↑%', tooltip: '距52周最低点涨幅' },
+  { key: '_52w_high_pct', label: '距52周高↓%', tooltip: '距52周最高点回撤' },
+  { key: '_sma200_slope', label: 'SMA200斜率', tooltip: '200日线趋势斜率(%/日)' },
+]
+
 function ResultsTab() {
-  const { results, totalPassed, runId, presets, activePresetId } = useScreenerStore()
+  const { results, totalPassed, runId, runs, currentRunFilters, currentRunVersion, presets, activePresetId, loadRunResults, fetchRuns } = useScreenerStore()
   const { items: watchItems, fetch: fetchWatchlist, add: addWatch, remove: removeWatch } = useWatchlistStore()
   const [sortBy, setSortBy] = useState<string>('score')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const [pendingSym, setPendingSym] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 
-  // 首次进入 / 刚跑完选股 时拉取关注列表
+  // 首次进入 / 刚跑完选股 时拉取关注列表和runs
   useEffect(() => { fetchWatchlist() }, [fetchWatchlist, runId])
+  useEffect(() => { fetchRuns() }, [fetchRuns])
 
   // 来源标签: screener:<preset_name>
   const sourceTag = (() => {
@@ -589,6 +604,19 @@ function ResultsTab() {
   })()
 
   const watchedSet = new Set(watchItems.map((it) => it.symbol))
+
+  // Determine which SEPA indicators to show based on filters used for this run
+  const sepaColsToShow = (() => {
+    try {
+      const filters = JSON.parse(currentRunFilters)
+      const tech = filters.technical || {}
+      const hasSepa = Object.keys(tech).some(k => k.startsWith('sepa_') && tech[k]?.enabled)
+      return hasSepa ? SEPA_INDICATOR_COLS : []
+    } catch { return [] }
+  })()
+
+  // Completed runs for version selector
+  const completedRuns = runs.filter(r => r.status === 'completed')
 
   const showToast = (msg: string, type: 'ok' | 'err' = 'ok') => {
     setToast({ msg, type })
@@ -614,8 +642,15 @@ function ResultsTab() {
   }
 
   const sorted = [...results].sort((a, b) => {
-    const aVal = (a as unknown as Record<string, unknown>)[sortBy] as number || 0
-    const bVal = (b as unknown as Record<string, unknown>)[sortBy] as number || 0
+    // Support sorting by indicator keys too
+    let aVal: number, bVal: number
+    if (sortBy.startsWith('_')) {
+      aVal = (a.indicators as Record<string, unknown>)?.[sortBy] as number || 0
+      bVal = (b.indicators as Record<string, unknown>)?.[sortBy] as number || 0
+    } else {
+      aVal = (a as unknown as Record<string, unknown>)[sortBy] as number || 0
+      bVal = (b as unknown as Record<string, unknown>)[sortBy] as number || 0
+    }
     return sortOrder === 'desc' ? bVal - aVal : aVal - bVal
   })
 
@@ -624,10 +659,11 @@ function ResultsTab() {
     else { setSortBy(field); setSortOrder('desc') }
   }
 
-  const SortHeader = ({ field, label, align = 'right' }: { field: string; label: string; align?: string }) => (
+  const SortHeader = ({ field, label, align = 'right', title }: { field: string; label: string; align?: string; title?: string }) => (
     <th
-      className={`text-${align} px-3 py-2 font-mono text-[10px] uppercase text-gray-500 cursor-pointer hover:text-copper transition-colors`}
+      className={`text-${align} px-3 py-2 font-mono text-[10px] uppercase text-gray-500 cursor-pointer hover:text-copper transition-colors whitespace-nowrap`}
       onClick={() => toggleSort(field)}
+      title={title}
     >
       {label} {sortBy === field && (sortOrder === 'desc' ? '↓' : '↑')}
     </th>
@@ -653,19 +689,45 @@ function ResultsTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <p className="text-sm text-gray-500">
-          共筛出 <span className="font-mono font-bold text-copper">{totalPassed}</span> 只股票
-          <span className="ml-3 text-xs text-cream-500">
+      {/* Header: version selector + stats */}
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          {/* Version selector */}
+          <select
+            value={runId}
+            onChange={(e) => { const id = Number(e.target.value); if (id) loadRunResults(id) }}
+            className="px-3 py-1.5 text-sm border border-cream-300 rounded-md bg-white focus:outline-none focus:border-copper font-mono"
+          >
+            {completedRuns.map((r) => (
+              <option key={r.id} value={r.id}>
+                v{r.version} · {r.passed_stocks}只通过 · {r.started_at ? new Date(r.started_at).toLocaleDateString('zh-CN') : ''}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-gray-500">
+            共筛出 <span className="font-mono font-bold text-copper">{totalPassed}</span> 只股票
+            {currentRunVersion && <span className="ml-2 text-xs text-cream-500">v{currentRunVersion}</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-cream-500">
             点击 ☆ 一键加入关注 · 来源: {sourceTag.replace('screener:', '')}
           </span>
-        </p>
-        {toast && (
-          <span className={`text-xs ${toast.type === 'ok' ? 'text-success' : 'text-danger'}`}>
-            {toast.msg}
-          </span>
-        )}
+          {toast && (
+            <span className={`text-xs ${toast.type === 'ok' ? 'text-success' : 'text-danger'}`}>
+              {toast.msg}
+            </span>
+          )}
+        </div>
       </div>
+
+      {/* SEPA indicators legend */}
+      {sepaColsToShow.length > 0 && (
+        <div className="mb-3 px-3 py-2 rounded-md bg-orange-50 border border-copper/15 text-xs text-gray-600">
+          📊 已显示 SEPA 策略指标: {sepaColsToShow.map(c => c.tooltip).join(' · ')}
+        </div>
+      )}
+
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -677,6 +739,9 @@ function ResultsTab() {
                 <th className="text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500">板块</th>
                 <SortHeader field="score" label="评分" />
                 <th className="text-left px-3 py-2 font-mono text-[10px] uppercase text-gray-500">等级</th>
+                {sepaColsToShow.map(col => (
+                  <SortHeader key={col.key} field={col.key} label={col.label} title={col.tooltip} />
+                ))}
                 <SortHeader field="price" label="价格" />
                 <SortHeader field="change_pct" label="涨跌%" />
                 <SortHeader field="pe_ratio" label="PE" />
@@ -711,6 +776,24 @@ function ResultsTab() {
                       </Badge>
                     </td>
                     <td className="px-3 py-2"><Badge variant="copper">{r.rating || '-'}</Badge></td>
+                    {sepaColsToShow.map(col => {
+                      const val = (r.indicators as Record<string, unknown>)?.[col.key] as number | undefined
+                      return (
+                        <td key={col.key} className="px-3 py-2 text-right font-mono text-xs">
+                          {val != null ? (
+                            <span className={
+                              col.key === '_rs_percentile' ? (val >= 80 ? 'text-success font-medium' : val >= 70 ? 'text-copper' : 'text-gray-500')
+                              : col.key === '_52w_low_pct' ? (val >= 50 ? 'text-success' : 'text-gray-600')
+                              : col.key === '_52w_high_pct' ? (val <= 10 ? 'text-success font-medium' : val <= 25 ? 'text-copper' : 'text-danger')
+                              : col.key === '_sma200_slope' ? (val > 0 ? 'text-success' : 'text-danger')
+                              : ''
+                            }>
+                              {val.toFixed(1)}{col.key !== '_sma200_slope' ? '%' : ''}
+                            </span>
+                          ) : <span className="text-gray-300">-</span>}
+                        </td>
+                      )
+                    })}
                     <td className="px-3 py-2 text-right font-mono text-xs">${r.price?.toFixed(2)}</td>
                     <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${r.change_pct >= 0 ? 'text-success' : 'text-danger'}`}>
                       {r.change_pct >= 0 ? '+' : ''}{r.change_pct?.toFixed(2)}%
@@ -721,7 +804,7 @@ function ResultsTab() {
                 )
               })}
               {results.length === 0 && (
-                <tr><td colSpan={10} className="text-center py-8 text-sm text-gray-400">暂无结果</td></tr>
+                <tr><td colSpan={10 + sepaColsToShow.length} className="text-center py-8 text-sm text-gray-400">暂无结果</td></tr>
               )}
             </tbody>
           </table>

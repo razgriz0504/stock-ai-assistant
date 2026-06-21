@@ -83,19 +83,55 @@ def _get_next_version() -> int:
         db.close()
 
 
-def _extract_indicators_snapshot(df: pd.DataFrame) -> dict:
-    """Extract key indicator values from the last row for display."""
+def _extract_indicators_snapshot(df: pd.DataFrame, info: dict | None = None) -> dict:
+    """Extract key indicator values from the last row for display.
+
+    Includes both generic indicators and SEPA-specific metrics.
+    """
     if df.empty:
         return {}
     last = df.iloc[-1]
-    keys = ["EMA_20", "EMA_50", "SMA_20", "MACD_12_26_9", "MACDs_12_26_9",
-            "MACDh_12_26_9", "RSI_14", "K_9_3", "D_9_3", "J_9_3",
+    keys = ["EMA_20", "EMA_50", "SMA_20", "SMA_50", "SMA_150", "SMA_200",
+            "MACD_12_26_9", "MACDs_12_26_9", "MACDh_12_26_9",
+            "RSI_14", "K_9_3", "D_9_3", "J_9_3",
             "Volume_Ratio", "ATRr_14"]
     snapshot = {}
     for k in keys:
         v = last.get(k)
         if v is not None and not pd.isna(v):
             snapshot[k] = round(float(v), 4)
+
+    # ── SEPA-specific metrics ──
+    close = float(last["Close"])
+
+    # 52-week high/low distances
+    lookback_252 = min(252, len(df))
+    low_52w = float(df["Low"].iloc[-lookback_252:].min())
+    high_52w = float(df["High"].iloc[-lookback_252:].max())
+
+    if low_52w > 0:
+        snapshot["_52w_low_pct"] = round(((close - low_52w) / low_52w) * 100, 1)
+    if high_52w > 0:
+        snapshot["_52w_high_pct"] = round(((high_52w - close) / high_52w) * 100, 1)
+
+    # SMA200 slope (linear regression over 22 days)
+    sma200_col = "SMA_200"
+    if sma200_col in df.columns and len(df) >= 222:
+        sma200_series = df[sma200_col].iloc[-22:]
+        if not sma200_series.isna().any():
+            from scipy import stats as _stats
+            x = np.arange(len(sma200_series))
+            y = sma200_series.values.astype(float)
+            slope, _, _, _, _ = _stats.linregress(x, y)
+            # Normalize slope as % per day relative to current SMA200
+            sma200_val = float(sma200_series.iloc[-1])
+            if sma200_val > 0:
+                snapshot["_sma200_slope"] = round((slope / sma200_val) * 100, 4)
+
+    # RS percentile (from info dict, injected by engine)
+    if info and "rs_percentile" in info:
+        snapshot["_rs_percentile"] = round(float(info["rs_percentile"]), 1)
+
     return snapshot
 
 
@@ -214,7 +250,7 @@ async def _execute_screener(
         history_data: dict[str, pd.DataFrame] = {}
         if need_ohlcv and symbols_to_scan:
             history_data = await asyncio.to_thread(
-                _yf_provider.get_batch_history, symbols_to_scan, "1y"
+                _yf_provider.get_batch_history, symbols_to_scan, "2y"
             )
             logger.info(f"Screener: got OHLCV data for {len(history_data)}/{len(symbols_to_scan)} stocks")
         _update_run(run_id, progress_pct=60)
@@ -303,7 +339,7 @@ async def _execute_screener(
                         if prev_close > 0:
                             change_pct = round((float(last_row["Close"]) - prev_close) / prev_close * 100, 2)
 
-                indicators_snapshot = _extract_indicators_snapshot(df) if not df.empty else {}
+                indicators_snapshot = _extract_indicators_snapshot(df, info) if not df.empty else {}
 
                 # Add name and sector to snapshot for display
                 indicators_snapshot["_name"] = info.get("short_name", "")
