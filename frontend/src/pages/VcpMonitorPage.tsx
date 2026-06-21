@@ -4,6 +4,7 @@ import { Tabs } from '@/components/ui'
 import { useVcpStore } from '@/stores/vcpStore'
 import type { VcpScanResult, VcpScanRun } from '@/stores/vcpStore'
 import VcpChart from '@/components/charts/VcpChart'
+import { getCnSector } from '@/data/cnNames'
 
 export default function VcpMonitorPage() {
   const [activeTab, setActiveTab] = useState('watchlist')
@@ -138,6 +139,7 @@ function ResultsTab() {
   const { runs, results, fetchRuns, fetchResults, fetchDetail, activeDetail, loading } = useVcpStore()
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null)
+  const [groupBySector, setGroupBySector] = useState(true)
 
   useEffect(() => { fetchRuns() }, []) // eslint-disable-line
 
@@ -161,6 +163,56 @@ function ResultsTab() {
     if (status === 'failed') return 'danger'
     return 'warning'
   }
+
+  // Group results by sector
+  const groupedResults = (() => {
+    if (!groupBySector) return null
+    const groups: Record<string, VcpScanResult[]> = {}
+    for (const r of results) {
+      const sector = getCnSector(r.sector) || '未知'
+      if (!groups[sector]) groups[sector] = []
+      groups[sector].push(r)
+    }
+    return Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
+  })()
+
+  const renderRow = (r: VcpScanResult) => (
+    <Fragment key={r.id}>
+      <tr
+        className="border-b border-cream-100 hover:bg-cream-50 cursor-pointer"
+        onClick={() => handleExpand(r)}
+      >
+        <td className="px-3 py-2 font-medium">{r.symbol}</td>
+        <td className="px-3 py-2 text-xs text-gray-500">{getCnSector(r.sector)}</td>
+        <td className="px-3 py-2">
+          <Badge variant={statusColor(r.status)}>{r.status}</Badge>
+        </td>
+        <td className="px-3 py-2 text-right font-mono">{r.score}</td>
+        <td className="px-3 py-2 text-right font-mono">
+          {r.pivot_price ? `$${r.pivot_price.toFixed(2)}` : '-'}
+        </td>
+        <td className="px-3 py-2 text-right text-xs text-gray-500">
+          {r.contractions.map(c => `${c.depth_pct}%`).join(' → ')}
+        </td>
+        <td className="px-3 py-2 text-right font-mono">
+          {r.rs_percentile ? r.rs_percentile.toFixed(0) : '-'}
+        </td>
+      </tr>
+      {expandedSymbol === r.symbol && (
+        <tr key={`${r.id}-chart`}>
+          <td colSpan={7} className="p-4 bg-cream-50">
+            {loading ? (
+              <div className="text-center py-8 text-gray-400">加载图表中...</div>
+            ) : activeDetail ? (
+              <VcpChart detail={activeDetail} />
+            ) : (
+              <div className="text-center py-8 text-gray-400">无数据</div>
+            )}
+          </td>
+        </tr>
+      )}
+    </Fragment>
+  )
 
   return (
     <div className="space-y-4">
@@ -188,12 +240,25 @@ function ResultsTab() {
       {/* Results table */}
       {selectedRunId && (
         <Card>
-          <CardHeader title={`扫描结果 (${results.length} 只检测到 VCP)`} />
+          <div className="flex items-center justify-between px-6 pt-4">
+            <CardHeader title={`扫描结果 (${results.length} 只检测到 VCP)`} />
+            <button
+              onClick={() => setGroupBySector(!groupBySector)}
+              className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                groupBySector
+                  ? 'bg-copper text-white border-copper'
+                  : 'bg-white text-gray-600 border-cream-300 hover:border-copper'
+              }`}
+            >
+              {groupBySector ? '✓ 按板块聚合' : '按板块聚合'}
+            </button>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-cream-200 text-xs text-gray-500">
                   <th className="px-3 py-2 text-left">代码</th>
+                  <th className="px-3 py-2 text-left">板块</th>
                   <th className="px-3 py-2 text-left">状态</th>
                   <th className="px-3 py-2 text-right">评分</th>
                   <th className="px-3 py-2 text-right">Pivot</th>
@@ -202,44 +267,22 @@ function ResultsTab() {
                 </tr>
               </thead>
               <tbody>
-                {results.map(r => (
-                  <Fragment key={r.id}>
-                    <tr
-                      className="border-b border-cream-100 hover:bg-cream-50 cursor-pointer"
-                      onClick={() => handleExpand(r)}
-                    >
-                      <td className="px-3 py-2 font-medium">{r.symbol}</td>
-                      <td className="px-3 py-2">
-                        <Badge variant={statusColor(r.status)}>{r.status}</Badge>
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">{r.score}</td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {r.pivot_price ? `$${r.pivot_price.toFixed(2)}` : '-'}
-                      </td>
-                      <td className="px-3 py-2 text-right text-xs text-gray-500">
-                        {r.contractions.map(c => `${c.depth_pct}%`).join(' → ')}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono">
-                        {r.rs_percentile ? r.rs_percentile.toFixed(0) : '-'}
-                      </td>
-                    </tr>
-                    {expandedSymbol === r.symbol && (
-                      <tr key={`${r.id}-chart`}>
-                        <td colSpan={6} className="p-4 bg-cream-50">
-                          {loading ? (
-                            <div className="text-center py-8 text-gray-400">加载图表中...</div>
-                          ) : activeDetail ? (
-                            <VcpChart detail={activeDetail} />
-                          ) : (
-                            <div className="text-center py-8 text-gray-400">无数据</div>
-                          )}
+                {groupBySector && groupedResults ? (
+                  groupedResults.map(([sector, items]) => (
+                    <Fragment key={sector}>
+                      <tr className="bg-cream-100/70">
+                        <td colSpan={7} className="px-3 py-2 text-xs font-semibold text-gray-700 border-b border-cream-300">
+                          {sector} <span className="ml-2 font-mono text-copper">({items.length})</span>
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                ))}
+                      {items.map(renderRow)}
+                    </Fragment>
+                  ))
+                ) : (
+                  results.map(renderRow)
+                )}
                 {results.length === 0 && !loading && (
-                  <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">该批次无 VCP 检测结果</td></tr>
+                  <tr><td colSpan={7} className="px-3 py-8 text-center text-gray-400">该批次无 VCP 检测结果</td></tr>
                 )}
               </tbody>
             </table>

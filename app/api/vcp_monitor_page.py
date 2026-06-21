@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from db.models import (
     SessionLocal, VcpWatchlist, VcpScanRun, VcpScanResult, VcpAlert,
+    ScreenerResult,
 )
 from app.vcp_monitor.scanner import run_vcp_scan, seed_from_sepa_results
 from app.vcp_monitor.detector import detect_vcp
@@ -161,6 +162,34 @@ def get_scan_results(run_id: int):
         results = db.query(VcpScanResult).filter_by(run_id=run_id).order_by(
             VcpScanResult.score.desc()
         ).all()
+
+        # Batch lookup sector info from latest ScreenerResult for each symbol
+        symbols = [r.symbol for r in results]
+        sector_map: dict[str, str] = {}
+        if symbols:
+            from sqlalchemy import func
+            # Get latest screener result for each symbol that has indicators
+            subq = (
+                db.query(
+                    ScreenerResult.symbol,
+                    func.max(ScreenerResult.id).label("max_id")
+                )
+                .filter(ScreenerResult.symbol.in_(symbols), ScreenerResult.passed == True)
+                .group_by(ScreenerResult.symbol)
+                .subquery()
+            )
+            rows = (
+                db.query(ScreenerResult.symbol, ScreenerResult.indicators_json)
+                .join(subq, ScreenerResult.id == subq.c.max_id)
+                .all()
+            )
+            for sym, ind_json in rows:
+                try:
+                    ind = json.loads(ind_json) if ind_json else {}
+                    sector_map[sym] = ind.get("_sector", "")
+                except Exception:
+                    pass
+
         return [
             {
                 "id": r.id,
@@ -171,6 +200,7 @@ def get_scan_results(run_id: int):
                 "contractions": json.loads(r.contractions_json) if r.contractions_json else [],
                 "volume_dry_ratio": r.volume_dry_ratio,
                 "rs_percentile": r.rs_percentile,
+                "sector": sector_map.get(r.symbol, ""),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in results

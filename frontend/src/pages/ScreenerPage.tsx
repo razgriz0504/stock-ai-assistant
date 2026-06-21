@@ -589,7 +589,7 @@ function ResultsTab() {
   const { items: watchItems, fetch: fetchWatchlist, add: addWatch, remove: removeWatch } = useWatchlistStore()
   const [sortBy, setSortBy] = useState<string>('score')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const [groupBySector, setGroupBySector] = useState(false)
+  const [groupBySector, setGroupBySector] = useState(true)
   const [pendingSym, setPendingSym] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null)
 

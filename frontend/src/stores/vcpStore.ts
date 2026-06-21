@@ -43,6 +43,7 @@ export interface VcpScanResult {
   contractions: VcpContraction[]
   volume_dry_ratio: number | null
   rs_percentile: number | null
+  sector: string
   created_at: string | null
 }
 
