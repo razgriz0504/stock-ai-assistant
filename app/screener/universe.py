@@ -1,9 +1,14 @@
-"""Stock universe fetcher: S&P 500 + Nasdaq 100 union with 24h cache."""
+"""Stock universe fetcher: S&P 500 + Nasdaq 100 union with 24h cache.
+
+Data sources (priority order):
+1. GitHub CSV (datasets/s-and-p-500-companies) — daily auto-updated
+2. NASDAQ Screener API — official, no key needed
+3. Hardcoded fallback — last resort
+"""
 
 import logging
 import time
 from io import StringIO
-from typing import Optional
 
 import pandas as pd
 import httpx
@@ -16,12 +21,18 @@ _USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHT
 _sp500_cache: dict = {"symbols": [], "ts": 0.0}
 _ndx100_cache: dict = {"symbols": [], "ts": 0.0}
 
+# ═══════════════════════════════════════════════════════════════
+# GitHub CSV Sources (most reliable for cloud servers)
+# ═══════════════════════════════════════════════════════════════
 
-def _fetch_wiki_html(url: str) -> str:
-    """Fetch Wikipedia HTML with proper User-Agent."""
-    resp = httpx.get(url, headers={"User-Agent": _USER_AGENT}, timeout=15, follow_redirects=True)
-    resp.raise_for_status()
-    return resp.text
+_GITHUB_SP500_URLS = [
+    "https://raw.githubusercontent.com/datasets/s-and-p-500-companies/main/data/constituents.csv",
+    "https://raw.githubusercontent.com/Ate329/top-us-stock-tickers/main/tickers/sp500.csv",
+]
+
+_GITHUB_NDX100_URLS = [
+    "https://raw.githubusercontent.com/Ate329/top-us-stock-tickers/main/tickers/nasdaq100.csv",
+]
 
 
 def _normalize_symbol(sym: str) -> str:
@@ -29,63 +40,128 @@ def _normalize_symbol(sym: str) -> str:
     return sym.strip().replace(".", "-")
 
 
+def _fetch_csv_symbols(urls: list[str], symbol_col_candidates: list[str]) -> list[str] | None:
+    """Try fetching symbols from GitHub CSV URLs (first success wins)."""
+    for url in urls:
+        try:
+            resp = httpx.get(url, headers={"User-Agent": _USER_AGENT}, timeout=15, follow_redirects=True)
+            resp.raise_for_status()
+            df = pd.read_csv(StringIO(resp.text))
+            # Find the symbol/ticker column
+            for col_name in symbol_col_candidates:
+                matched = [c for c in df.columns if c.lower().strip() == col_name.lower()]
+                if matched:
+                    symbols = [_normalize_symbol(str(s)) for s in df[matched[0]].dropna().tolist() if str(s).strip()]
+                    if len(symbols) > 50:  # sanity check
+                        logger.info(f"Fetched {len(symbols)} symbols from {url}")
+                        return symbols
+        except Exception as e:
+            logger.debug(f"Failed to fetch from {url}: {e}")
+            continue
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# NASDAQ Official API (backup)
+# ═══════════════════════════════════════════════════════════════
+
+def _fetch_from_nasdaq_api(index: str = "sp500") -> list[str] | None:
+    """Fetch from NASDAQ screener API. index: 'sp500' or 'nasdaq100'."""
+    try:
+        # NASDAQ API provides all traded stocks; we filter by index membership isn't directly
+        # available, but we can get top stocks by market cap as a proxy for Nasdaq-100
+        if index == "nasdaq100":
+            url = "https://api.nasdaq.com/api/quote/list-type/nasdaq100"
+        else:
+            url = "https://api.nasdaq.com/api/quote/list-type/sp500"
+
+        headers = {
+            "User-Agent": _USER_AGENT,
+            "Accept": "application/json",
+        }
+        resp = httpx.get(url, headers=headers, timeout=15, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.json()
+
+        # Navigate response structure
+        rows = data.get("data", {}).get("data", {}).get("rows", [])
+        if not rows:
+            # Alternative structure
+            rows = data.get("data", {}).get("rows", [])
+        if not rows:
+            return None
+
+        symbols = [_normalize_symbol(r.get("symbol", "")) for r in rows if r.get("symbol")]
+        if len(symbols) > 50:
+            logger.info(f"Fetched {len(symbols)} symbols from NASDAQ API ({index})")
+            return symbols
+    except Exception as e:
+        logger.debug(f"NASDAQ API failed for {index}: {e}")
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Public API
+# ═══════════════════════════════════════════════════════════════
+
 def get_sp500_symbols() -> list[str]:
-    """Fetch S&P 500 constituent symbols from Wikipedia (cached 24h)."""
+    """Fetch S&P 500 constituent symbols (cached 24h).
+
+    Priority: GitHub CSV → NASDAQ API → fallback
+    """
     now = time.time()
     if _sp500_cache["symbols"] and (now - _sp500_cache["ts"]) < _CACHE_TTL:
         return _sp500_cache["symbols"]
 
-    try:
-        url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
-        html = _fetch_wiki_html(url)
-        tables = pd.read_html(StringIO(html))
-        df = tables[0]
-        symbols = [_normalize_symbol(s) for s in df["Symbol"].tolist()]
+    # Try GitHub CSV first
+    symbols = _fetch_csv_symbols(_GITHUB_SP500_URLS, ["symbol", "ticker"])
+    if symbols:
         _sp500_cache["symbols"] = symbols
         _sp500_cache["ts"] = now
-        logger.info(f"Fetched {len(symbols)} S&P 500 symbols from Wikipedia")
         return symbols
-    except Exception as e:
-        logger.warning(f"Failed to fetch S&P 500 list from Wikipedia: {e}, using fallback")
-        if _sp500_cache["symbols"]:
-            return _sp500_cache["symbols"]
-        return _SP500_FALLBACK.copy()
+
+    # Try NASDAQ API
+    symbols = _fetch_from_nasdaq_api("sp500")
+    if symbols:
+        _sp500_cache["symbols"] = symbols
+        _sp500_cache["ts"] = now
+        return symbols
+
+    # Fallback
+    logger.warning("All S&P 500 sources failed, using fallback list")
+    if _sp500_cache["symbols"]:
+        return _sp500_cache["symbols"]
+    return _SP500_FALLBACK.copy()
 
 
 def get_ndx100_symbols() -> list[str]:
-    """Fetch Nasdaq 100 constituent symbols from Wikipedia (cached 24h)."""
+    """Fetch Nasdaq 100 constituent symbols (cached 24h).
+
+    Priority: GitHub CSV → NASDAQ API → fallback
+    """
     now = time.time()
     if _ndx100_cache["symbols"] and (now - _ndx100_cache["ts"]) < _CACHE_TTL:
         return _ndx100_cache["symbols"]
 
-    try:
-        url = "https://en.wikipedia.org/wiki/Nasdaq-100"
-        html = _fetch_wiki_html(url)
-        tables = pd.read_html(StringIO(html))
-        # The components table has a "Ticker" or "Symbol" column
-        df = None
-        for t in tables:
-            cols = [c.lower() for c in t.columns]
-            if "ticker" in cols:
-                df = t
-                col_name = t.columns[cols.index("ticker")]
-                break
-            elif "symbol" in cols:
-                df = t
-                col_name = t.columns[cols.index("symbol")]
-                break
-        if df is None:
-            raise ValueError("Could not find Nasdaq-100 components table")
-        symbols = [_normalize_symbol(s) for s in df[col_name].tolist()]
+    # Try GitHub CSV first
+    symbols = _fetch_csv_symbols(_GITHUB_NDX100_URLS, ["symbol", "ticker"])
+    if symbols:
         _ndx100_cache["symbols"] = symbols
         _ndx100_cache["ts"] = now
-        logger.info(f"Fetched {len(symbols)} Nasdaq 100 symbols from Wikipedia")
         return symbols
-    except Exception as e:
-        logger.warning(f"Failed to fetch Nasdaq 100 list from Wikipedia: {e}, using fallback")
-        if _ndx100_cache["symbols"]:
-            return _ndx100_cache["symbols"]
-        return _NDX100_FALLBACK.copy()
+
+    # Try NASDAQ API
+    symbols = _fetch_from_nasdaq_api("nasdaq100")
+    if symbols:
+        _ndx100_cache["symbols"] = symbols
+        _ndx100_cache["ts"] = now
+        return symbols
+
+    # Fallback
+    logger.warning("All Nasdaq 100 sources failed, using fallback list")
+    if _ndx100_cache["symbols"]:
+        return _ndx100_cache["symbols"]
+    return _NDX100_FALLBACK.copy()
 
 
 def get_universe() -> list[str]:
@@ -98,7 +174,7 @@ def get_universe() -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════
-# Fallback lists (top holdings, used if Wikipedia is unreachable)
+# Fallback lists (used only if ALL online sources fail)
 # ═══════════════════════════════════════════════════════════════
 
 _NDX100_FALLBACK = [
