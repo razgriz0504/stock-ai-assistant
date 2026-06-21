@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { Fragment, useState, useEffect } from 'react'
 import { Card, CardHeader, Button, Badge } from '@/components/ui'
 import { Tabs } from '@/components/ui'
 import { useVcpStore } from '@/stores/vcpStore'
@@ -101,7 +101,7 @@ function WatchlistTab() {
                 <tr key={item.id} className="border-b border-cream-100 hover:bg-cream-50">
                   <td className="px-3 py-2 font-medium">{item.symbol}</td>
                   <td className="px-3 py-2">
-                    <Badge variant={item.source === 'auto' ? 'default' : 'secondary'}>
+                    <Badge variant={item.source === 'auto' ? 'default' : 'copper'}>
                       {item.source === 'auto' ? '自动' : '手动'}
                     </Badge>
                   </td>
@@ -156,10 +156,10 @@ function ResultsTab() {
     }
   }
 
-  const statusColor = (status: string): "default" | "secondary" | "destructive" => {
-    if (status === 'breakout') return 'default'
-    if (status === 'failed') return 'destructive'
-    return 'secondary'
+  const statusColor = (status: string): "default" | "success" | "danger" | "warning" | "copper" => {
+    if (status === 'breakout') return 'success'
+    if (status === 'failed') return 'danger'
+    return 'warning'
   }
 
   return (
@@ -203,9 +203,8 @@ function ResultsTab() {
               </thead>
               <tbody>
                 {results.map(r => (
-                  <>
+                  <Fragment key={r.id}>
                     <tr
-                      key={r.id}
                       className="border-b border-cream-100 hover:bg-cream-50 cursor-pointer"
                       onClick={() => handleExpand(r)}
                     >
@@ -237,7 +236,7 @@ function ResultsTab() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 ))}
                 {results.length === 0 && !loading && (
                   <tr><td colSpan={6} className="px-3 py-8 text-center text-gray-400">该批次无 VCP 检测结果</td></tr>
