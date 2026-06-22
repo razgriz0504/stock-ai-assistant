@@ -36,12 +36,13 @@ class Contraction:
 @dataclass
 class VcpResult:
     """Result of VCP detection for a single stock."""
-    status: str             # "forming" / "breakout" / "failed"
+    status: str             # "forming" / "breakout" / "extended" / "failed"
     score: int              # 0-100 quality score
     pivot_price: float      # The breakout pivot point
     base_start_date: str    # When the base started
     contractions: list[Contraction] = field(default_factory=list)
     volume_dry_ratio: float = 0.0   # Last contraction vol / base avg vol
+    breakout_volume_surge: bool = False  # 当 status=breakout 时, 当日量能是否 > 1.5x SMA20
 
 
 def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpResult]:
@@ -96,11 +97,13 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
         last_volume = float(df.iloc[-1]["Volume"])
         vol_sma20 = float(df["Volume"].iloc[-20:].mean()) if len(df) >= 20 else float(df["Volume"].mean())
 
-        if last_close > pivot_price and last_volume > 1.5 * vol_sma20:
-            # Check if already extended beyond pivot (> 5% above pivot = too late)
+        # ── Status 判定: 价格驱动 (Price Action 优先), 量能作为辅助标记 ──
+        # 修复: 不再用 volume 作为 breakout 硬门槛, 避免错过缩量回踩 Pivot 的 Cheat 进场点
+        volume_surge = last_volume > 1.5 * vol_sma20
+        if last_close > pivot_price:
             extension_pct = (last_close - pivot_price) / pivot_price * 100
             if extension_pct > 5.0:
-                status = "extended"  # Too far above pivot, not actionable
+                status = "extended"  # 已超 pivot 5%, 错过买点
             else:
                 status = "breakout"
         elif last_close < contractions[-1].low:
@@ -118,6 +121,7 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
             base_start_date=base_start_date,
             contractions=contractions,
             volume_dry_ratio=round(volume_dry_ratio, 3),
+            breakout_volume_surge=bool(volume_surge and status == "breakout"),
         )
 
     except Exception as e:
@@ -164,7 +168,11 @@ def _find_base_high(df: pd.DataFrame) -> Optional[int]:
         subsequent = df["Close"].iloc[idx:].values
         if len(subsequent) < 10:
             continue
-        min_after = subsequent[5:].min()  # Min after 5 bars
+        # 冗余防御: 即便 len>=10, 切片后仍显式校验, 防止停牌/次新股边界异常
+        tail = subsequent[5:]
+        if len(tail) == 0:
+            continue
+        min_after = tail.min()
         decline_pct = (high_val - min_after) / high_val * 100
 
         if decline_pct >= 8:  # At least 8% decline to form a base
@@ -179,7 +187,13 @@ def _find_base_high(df: pd.DataFrame) -> Optional[int]:
 
 
 def _extract_contractions(base_df: pd.DataFrame) -> list[Contraction]:
-    """Extract contraction sequence from the base using small window swing detection."""
+    """重构版: 基于时间序状态机的严格交替高低点提取.
+
+    旧实现遍历 swing_high_indices 配对下一个未使用的 swing_low, 在连续出现
+    多个邻近 HIGH (H1, H2, L1) 时会破坏波段交替结构. 新实现按时间序合并所
+    有极值事件, 用状态机强制 HIGH -> LOW 交替: 等待 LOW 期间若再现更高 HIGH
+    则动态上移基底高点, 出现 LOW 则配对并复位状态.
+    """
     small_window = 4
     highs = base_df["High"].values
     lows = base_df["Low"].values
@@ -190,70 +204,64 @@ def _extract_contractions(base_df: pd.DataFrame) -> list[Contraction]:
     if n < 15:
         return []
 
-    # Find swing highs and lows with small window
-    swing_high_indices = []
-    swing_low_indices = []
-
+    # 1. 提取所有局部极值点, 按时间序合并
+    events = []  # (index, type, price)
     for i in range(small_window, n - small_window):
         left_s = max(0, i - small_window)
         right_e = min(n, i + small_window + 1)
-
         if highs[i] == highs[left_s:right_e].max():
-            swing_high_indices.append(i)
+            events.append((i, "HIGH", float(highs[i])))
         if lows[i] == lows[left_s:right_e].min():
-            swing_low_indices.append(i)
+            events.append((i, "LOW", float(lows[i])))
 
-    if len(swing_high_indices) < 2 or len(swing_low_indices) < 1:
+    if not events:
         return []
 
-    # Build contractions: pair each swing high with the following swing low
-    contractions = []
-    used_lows = set()
+    # events 按 index 排序 (同 index 时 HIGH 优先, 避免同 bar 同时为高低点导致空段)
+    events.sort(key=lambda e: (e[0], 0 if e[1] == "HIGH" else 1))
 
-    for i, sh_idx in enumerate(swing_high_indices):
-        # Find the next swing low after this swing high
-        best_low_idx = None
-        for sl_idx in swing_low_indices:
-            if sl_idx > sh_idx and sl_idx not in used_lows:
-                best_low_idx = sl_idx
+    # 2. 状态机: 强制 HIGH -> LOW 交替
+    contractions: list[Contraction] = []
+    last_high_idx: Optional[int] = None
+    last_high_val: Optional[float] = None
+
+    for idx, ev_type, price in events:
+        if ev_type == "HIGH":
+            # 等待 LOW 期间出现更高 HIGH, 动态上移基底
+            if last_high_val is None or price > last_high_val:
+                last_high_idx = idx
+                last_high_val = price
+        elif ev_type == "LOW" and last_high_idx is not None:
+            sh_idx = last_high_idx
+            sl_idx = idx
+            if sl_idx <= sh_idx:
+                continue
+
+            high_val = float(last_high_val)
+            low_val = float(lows[sl_idx])
+            if high_val <= 0:
+                continue
+
+            depth_pct = (high_val - low_val) / high_val * 100
+            vol_slice = volumes[sh_idx:sl_idx + 1]
+            avg_vol = float(vol_slice.mean()) if len(vol_slice) > 0 else 0.0
+
+            contractions.append(Contraction(
+                name=f"T{len(contractions) + 1}",
+                start_date=str(dates[sh_idx].date()),
+                end_date=str(dates[sl_idx].date()),
+                high=round(high_val, 2),
+                low=round(low_val, 2),
+                depth_pct=round(depth_pct, 2),
+                avg_volume=round(avg_vol, 0),
+            ))
+
+            # 复位状态, 等待下一个 HIGH
+            last_high_idx = None
+            last_high_val = None
+
+            if len(contractions) >= 5:
                 break
-
-        if best_low_idx is None:
-            continue
-
-        # Determine end of this contraction (next swing high or end of data)
-        end_idx = n - 1
-        if i + 1 < len(swing_high_indices):
-            end_idx = swing_high_indices[i + 1] - 1
-
-        high_val = float(highs[sh_idx])
-        low_val = float(lows[best_low_idx])
-
-        if high_val <= 0:
-            continue
-
-        depth_pct = (high_val - low_val) / high_val * 100
-        start_date = str(dates[sh_idx].date())
-        end_date = str(dates[min(end_idx, n - 1)].date())
-
-        # Average volume in this contraction range
-        vol_slice = volumes[sh_idx:min(end_idx + 1, n)]
-        avg_vol = float(vol_slice.mean()) if len(vol_slice) > 0 else 0
-
-        contractions.append(Contraction(
-            name=f"T{len(contractions) + 1}",
-            start_date=start_date,
-            end_date=end_date,
-            high=round(high_val, 2),
-            low=round(low_val, 2),
-            depth_pct=round(depth_pct, 2),
-            avg_volume=round(avg_vol, 0),
-        ))
-        used_lows.add(best_low_idx)
-
-        # Stop if we have enough contractions
-        if len(contractions) >= 5:
-            break
 
     return contractions
 
@@ -282,9 +290,10 @@ def _validate_contractions(contractions: list[Contraction]) -> bool:
     TOLERANCE_PCT = 1.0  # Allow 1% overshoot
     violations = 0
     for i in range(1, len(contractions)):
-        curr = contractions[i].depth_pct
-        prev = contractions[i - 1].depth_pct
-        if curr > prev + TOLERANCE_PCT:
+        # 显式 round 规避浮点精度残留 (0.1 + 0.2 != 0.3 类问题)
+        curr = round(contractions[i].depth_pct, 2)
+        prev = round(contractions[i - 1].depth_pct, 2)
+        if curr > round(prev + TOLERANCE_PCT, 2):
             violations += 1
 
     # Zero tolerance for expansion when we have few contractions
