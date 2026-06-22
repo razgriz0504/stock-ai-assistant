@@ -45,32 +45,50 @@ class VcpResult:
     breakout_volume_surge: bool = False  # 当 status=breakout 时, 当日量能是否 > 1.5x SMA20
 
 
-def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpResult]:
+def detect_vcp(
+    df: pd.DataFrame,
+    rs_percentile: float = 50.0,
+    *,
+    enforce_rs_threshold: bool = True,
+) -> Optional[VcpResult]:
     """Detect VCP pattern in a stock's OHLCV DataFrame.
 
     Args:
         df: DataFrame with columns [Open, High, Low, Close, Volume], DatetimeIndex
         rs_percentile: The stock's RS rating (0-100) for scoring
+        enforce_rs_threshold: When True, reject RS<80 at the entrance
+            (Stage 2 trend template hard gate). Set False for on-demand
+            detail views where the user explicitly opened the chart.
 
     Returns:
         VcpResult if a valid VCP pattern is detected, None otherwise.
     """
-    result, _ = detect_vcp_with_reason(df, rs_percentile)
+    result, _ = detect_vcp_with_reason(
+        df, rs_percentile, enforce_rs_threshold=enforce_rs_threshold
+    )
     return result
 
 
 def detect_vcp_with_reason(
-    df: pd.DataFrame, rs_percentile: float = 50.0
+    df: pd.DataFrame,
+    rs_percentile: float = 50.0,
+    *,
+    enforce_rs_threshold: bool = True,
 ) -> tuple[Optional[VcpResult], Optional[str]]:
     """诊断版 detect_vcp: 同时返回拒绝原因。
 
     Returns:
         (VcpResult, None) 检测成功
         (None, reason_str) 被拒绝, reason_str 为类别标记:
-            data_insufficient / no_base_high / base_too_short /
+            rs_too_low:X / data_insufficient / no_base_high / base_too_short /
             no_contractions / too_few_contractions / t1_depth_X /
-            expansion / last_not_tight / not_diminishing / exception
+            expansion_early:X / expansion_late:X / last_not_tight /
+            not_diminishing / exception
     """
+    # Step 0: RS 硬门槛 (Stage 2 趋势模板 —— RS<80 直接拒绝, 避免扫出跟风股)
+    if enforce_rs_threshold and rs_percentile < 80.0:
+        return None, f"rs_too_low:{rs_percentile:.0f}"
+
     if df.empty or len(df) < 60:
         return None, "data_insufficient"
 
@@ -291,14 +309,18 @@ def _validate_contractions(contractions: list[Contraction]) -> bool:
 def _validate_contractions_with_reason(
     contractions: list[Contraction],
 ) -> Optional[str]:
-    """诊断版: 返回 None 表示通过, 返回字符串表示被拒绝的具体原因.
+    """诊断版: 返回 None 表示通过, 返回字符串表示被拒绝的具体原因。
 
-    Rules:
+    Rules (位置敏感的单调递减验证):
     - At least 2 contractions
     - T1 depth between 10% and 40%
-    - Strict monotonic decrease with ±1% tolerance (no expansion allowed)
+    - T1 → T2 (首收缩) 允许 ≤ 1% 的微小放大 (市场短暂异动容忍)
+    - T2 之后的任何一次比较 (T2→T3, T3→T4, T4→T5…) 必须严格不放大 (允许相等)
     - Last contraction must be < 5% (筹码锁死)
     - Overall pattern shows clear tightening (last < 50% of first)
+
+    设计意图: 越靠近突破点对 "紧" 的要求越变态, 避免 KEY 那种
+    4.31%→4.66%→7.76% 的中段恶性扩张靠全局宽容名额溜过。
     """
     if len(contractions) < 2:
         return "too_few_contractions"
@@ -310,18 +332,23 @@ def _validate_contractions_with_reason(
     if t1_depth > 40:
         return f"t1_depth_too_deep:{t1_depth:.1f}%"
 
-    # ── Strict monotonic decrease check ──
-    TOLERANCE_PCT = 1.0
-    violations = 0
+    # ── 位置敏感的单调递减 check ──
+    EARLY_TOLERANCE_PCT = 1.0   # 仅 T1→T2 允许 ≤1% 微放大
     for i in range(1, len(contractions)):
         curr = round(contractions[i].depth_pct, 2)
         prev = round(contractions[i - 1].depth_pct, 2)
-        if curr > round(prev + TOLERANCE_PCT, 2):
-            violations += 1
-
-    max_allowed_violations = 1 if len(contractions) >= 4 else 0
-    if violations > max_allowed_violations:
-        return f"expansion:{violations}_violations"
+        if i == 1:
+            # 首收缩 → 第二收缩: 允许轻微放大
+            if curr > round(prev + EARLY_TOLERANCE_PCT, 2):
+                return (
+                    f"expansion_early:T{i + 1}={curr:.1f}%>T{i}={prev:.1f}%"
+                )
+        else:
+            # 中末段: 零容忍, 任何放大都立即否决 (允许 ==)
+            if curr > prev:
+                return (
+                    f"expansion_late:T{i + 1}={curr:.1f}%>T{i}={prev:.1f}%"
+                )
 
     # ── Last contraction must be tight (< 5%) ──
     last_depth = contractions[-1].depth_pct

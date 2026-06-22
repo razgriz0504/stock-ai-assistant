@@ -264,8 +264,8 @@ async def get_symbol_detail(symbol: str):
     rs_snapshot = get_rs_snapshot([symbol])
     rs = rs_snapshot.get(symbol, 0.0)
 
-    # Run VCP detection
-    vcp_result = detect_vcp(df, rs_percentile=rs)
+    # Run VCP detection (detail 端用户主动点开, 不应被 RS 硬门槛拦截)
+    vcp_result = detect_vcp(df, rs_percentile=rs, enforce_rs_threshold=False)
 
     # Build OHLCV array
     ohlcv = []

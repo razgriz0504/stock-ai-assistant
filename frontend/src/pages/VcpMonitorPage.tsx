@@ -46,9 +46,12 @@ const REJECT_REASON_LABEL: Record<string, string> = {
 function prettyRejectReason(reason: string | null | undefined): string {
   if (!reason) return '-'
   if (REJECT_REASON_LABEL[reason]) return REJECT_REASON_LABEL[reason] as string
-  // 含占位符的拒绝原因 (t1_depth_too_shallow:8.3% 等)
+  // 含占位符的拒绝原因
+  if (reason.startsWith('rs_too_low')) return `RS 太低 (${reason.split(':')[1] || ''})`
   if (reason.startsWith('t1_depth_too_shallow')) return `T1 过浅 (${reason.split(':')[1] || ''})`
   if (reason.startsWith('t1_depth_too_deep')) return `T1 过深 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('expansion_early')) return `首收缩放大 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('expansion_late')) return `中末段放大 (${reason.split(':')[1] || ''})`
   if (reason.startsWith('expansion')) return `出现扩张 (${reason.split(':')[1] || ''})`
   if (reason.startsWith('last_not_tight')) return `末段不够紧 (${reason.split(':')[1] || ''})`
   if (reason.startsWith('not_diminishing')) return `未递减 (${reason.split(':')[1] || ''})`
