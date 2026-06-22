@@ -166,6 +166,7 @@ def get_scan_results(run_id: int):
         # Batch lookup sector info from latest ScreenerResult for each symbol
         symbols = [r.symbol for r in results]
         sector_map: dict[str, str] = {}
+        last_alert_map: dict[str, str] = {}
         if symbols:
             from sqlalchemy import func
             # Get latest screener result for each symbol that has indicators
@@ -190,6 +191,25 @@ def get_scan_results(run_id: int):
                 except Exception:
                     pass
 
+            # Latest breakout alert timestamp per symbol
+            alert_subq = (
+                db.query(
+                    VcpAlert.symbol,
+                    func.max(VcpAlert.alerted_at).label("max_at")
+                )
+                .filter(VcpAlert.symbol.in_(symbols))
+                .group_by(VcpAlert.symbol)
+                .all()
+            )
+            for sym, max_at in alert_subq:
+                if max_at:
+                    last_alert_map[sym] = max_at.isoformat()
+
+        def _distance_pct(pivot: Optional[float], last: Optional[float]) -> Optional[float]:
+            if pivot is None or last is None or pivot <= 0:
+                return None
+            return round((last - pivot) / pivot * 100, 2)
+
         return [
             {
                 "id": r.id,
@@ -197,10 +217,13 @@ def get_scan_results(run_id: int):
                 "status": r.status,
                 "score": r.score,
                 "pivot_price": r.pivot_price,
+                "last_close": r.last_close,
+                "distance_pct": _distance_pct(r.pivot_price, r.last_close),
                 "contractions": json.loads(r.contractions_json) if r.contractions_json else [],
                 "volume_dry_ratio": r.volume_dry_ratio,
                 "rs_percentile": r.rs_percentile,
                 "sector": sector_map.get(r.symbol, ""),
+                "last_alert_at": last_alert_map.get(r.symbol),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in results

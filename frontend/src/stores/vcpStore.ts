@@ -40,10 +40,13 @@ export interface VcpScanResult {
   status: string
   score: number
   pivot_price: number | null
+  last_close: number | null
+  distance_pct: number | null
   contractions: VcpContraction[]
   volume_dry_ratio: number | null
   rs_percentile: number | null
   sector: string
+  last_alert_at: string | null
   created_at: string | null
 }
 

@@ -308,6 +308,8 @@ def _migrate_missing_columns():
         ("weekly_reports", "ai_sector_strength_summary", "TEXT DEFAULT ''"),
         ("weekly_reports", "sector_strength_system_prompt", "TEXT DEFAULT ''"),
         ("report_config", "default_sector_strength_system_prompt", "TEXT DEFAULT ''"),
+        # VCP 监控：扫描时刻最新收盘价（用于计算距 Pivot 百分比）
+        ("vcp_scan_results", "last_close", "REAL DEFAULT NULL"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
@@ -372,6 +374,7 @@ class VcpScanResult(Base):
     status = Column(String(20), default="forming")       # "forming" / "breakout" / "failed"
     score = Column(Integer, default=0)                   # 0-100 质量评分
     pivot_price = Column(Float, nullable=True)
+    last_close = Column(Float, nullable=True)            # 扫描时刻最新收盘价（计算 distance_pct）
     contractions_json = Column(Text, default="[]")       # JSON: 收缩序列坐标
     volume_dry_ratio = Column(Float, nullable=True)      # 量能干枯比
     rs_percentile = Column(Float, nullable=True)

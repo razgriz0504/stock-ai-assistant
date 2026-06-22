@@ -121,12 +121,19 @@ async def _execute_scan(trigger: str) -> int:
                 for c in vcp_result.contractions
             ]
 
+            # 取扫描时刻最新收盘价用于 distance_pct 计算
+            try:
+                last_close = float(df.iloc[-1]["Close"])
+            except Exception:
+                last_close = None
+
             results.append(VcpScanResult(
                 run_id=run_id,
                 symbol=sym,
                 status=vcp_result.status,
                 score=vcp_result.score,
                 pivot_price=vcp_result.pivot_price,
+                last_close=last_close,
                 contractions_json=json.dumps(contractions_data),
                 volume_dry_ratio=vcp_result.volume_dry_ratio,
                 rs_percentile=rs,
