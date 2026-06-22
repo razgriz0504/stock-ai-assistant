@@ -95,7 +95,6 @@ interface VcpState {
   fetchResults: (runId: number) => Promise<void>
   fetchDetail: (symbol: string) => Promise<void>
   fetchAlerts: () => Promise<void>
-  seedFromSepa: () => Promise<number>
 }
 
 export const useVcpStore = create<VcpState>((set) => ({
@@ -155,13 +154,5 @@ export const useVcpStore = create<VcpState>((set) => ({
   fetchAlerts: async () => {
     const { data } = await api.get('/api/vcp-monitor/alerts')
     set({ alerts: data })
-  },
-
-  seedFromSepa: async () => {
-    const { data } = await api.post('/api/vcp-monitor/seed-from-sepa')
-    // Refresh watchlist
-    const wl = await api.get('/api/vcp-monitor/watchlist')
-    set({ watchlist: wl.data })
-    return data.added as number
   },
 }))

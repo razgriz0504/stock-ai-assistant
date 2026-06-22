@@ -21,7 +21,7 @@ from db.models import (
     SessionLocal, VcpWatchlist, VcpScanRun, VcpScanResult, VcpAlert,
     ScreenerResult,
 )
-from app.vcp_monitor.scanner import run_vcp_scan, run_vcp_scan_from_screener, seed_from_sepa_results
+from app.vcp_monitor.scanner import run_vcp_scan, run_vcp_scan_from_screener
 from app.vcp_monitor.detector import detect_vcp
 from app.data.yfinance_provider import YFinanceProvider
 from app.data.rs_rating import get_rs_snapshot
@@ -357,10 +357,3 @@ def get_alerts(limit: int = 50):
         db.close()
 
 
-# ── Seeding ──
-
-@router.post("/seed-from-sepa")
-def seed_watchlist_from_sepa():
-    """Seed VCP watchlist from the most recent SEPA screener results."""
-    added = seed_from_sepa_results(max_items=50)
-    return {"message": f"Seeded {added} stocks from latest SEPA results", "added": added}

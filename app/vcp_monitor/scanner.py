@@ -485,52 +485,6 @@ def _cleanup_stale_watchlist():
         db.close()
 
 
-def seed_from_sepa_results(max_items: int = 50) -> int:
-    """Import top stocks from the most recent SEPA screener run into VCP watchlist.
-
-    Returns number of newly added symbols.
-    """
-    db = SessionLocal()
-    try:
-        # Find latest completed screener run
-        latest_run = db.query(ScreenerRun).filter_by(
-            status="completed"
-        ).order_by(ScreenerRun.id.desc()).first()
-
-        if not latest_run:
-            return 0
-
-        # Get passed results sorted by score
-        passed = db.query(ScreenerResult).filter_by(
-            run_id=latest_run.id, passed=True
-        ).order_by(ScreenerResult.score.desc()).limit(max_items).all()
-
-        # Get existing watchlist symbols
-        existing = {w.symbol for w in db.query(VcpWatchlist).all()}
-
-        added = 0
-        for result in passed:
-            if result.symbol not in existing:
-                db.add(VcpWatchlist(
-                    symbol=result.symbol,
-                    source="auto",
-                    auto_seeded=True,
-                    enabled=True,
-                    note=f"From screener run #{latest_run.version}",
-                ))
-                added += 1
-
-        if added:
-            db.commit()
-            logger.info(f"VCP seeded {added} stocks from screener run #{latest_run.version}")
-        return added
-    except Exception as e:
-        logger.error(f"SEPA seeding error: {e}")
-        return 0
-    finally:
-        db.close()
-
-
 def _update_run(run_id: int, **kwargs):
     """Update VCP scan run record."""
     db = SessionLocal()

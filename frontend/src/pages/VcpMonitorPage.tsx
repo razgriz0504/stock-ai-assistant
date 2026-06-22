@@ -97,7 +97,7 @@ function ResultsTab() {
   const {
     runs, results, watchlist, activeDetail, loading, scanning,
     fetchRuns, fetchResults, fetchDetail, fetchWatchlist,
-    startScan, seedFromSepa, addSymbol,
+    startScan, addSymbol,
   } = useVcpStore()
 
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null)
@@ -166,11 +166,6 @@ function ResultsTab() {
     setSelectedRunId(null)
   }
 
-  const handleSeed = async () => {
-    const added = await seedFromSepa()
-    flash(`从 SEPA 导入 ${added} 只股票`)
-  }
-
   // ── 过滤 + 排序 ──
   const watchlistSet = useMemo(
     () => new Set(watchlist.filter(w => w.enabled).map(w => w.symbol)),
@@ -213,7 +208,6 @@ function ResultsTab() {
           <Button size="sm" onClick={handleScan} disabled={scanning}>
             {scanning ? '扫描中...' : '立即扫描'}
           </Button>
-          <Button size="sm" variant="secondary" onClick={handleSeed}>SEPA 种子</Button>
           <div className="h-5 w-px bg-cream-300 mx-1" />
           <input
             value={newSymbol}
@@ -472,7 +466,7 @@ function ResultRow({
 // Watchlist Tab（精简：移除"立即扫描"，仅保留标的池管理）
 // ═══════════════════════════════════════════════════════════════
 function WatchlistTab() {
-  const { watchlist, fetchWatchlist, addSymbol, removeSymbol, seedFromSepa } = useVcpStore()
+  const { watchlist, fetchWatchlist, addSymbol, removeSymbol } = useVcpStore()
   const [newSymbol, setNewSymbol] = useState('')
   const [toast, setToast] = useState('')
 
@@ -495,11 +489,6 @@ function WatchlistTab() {
     }
   }
 
-  const handleSeed = async () => {
-    const added = await seedFromSepa()
-    flash(`从 SEPA 导入 ${added} 只`)
-  }
-
   const enabledItems = watchlist.filter(w => w.enabled)
   const disabledItems = watchlist.filter(w => !w.enabled)
 
@@ -515,7 +504,6 @@ function WatchlistTab() {
             className="px-3 py-2 text-sm border border-cream-300 rounded-md bg-white focus:outline-none focus:border-copper w-48"
           />
           <Button size="sm" onClick={handleAdd}>添加</Button>
-          <Button size="sm" variant="secondary" onClick={handleSeed}>从 SEPA 种子</Button>
           {toast && <span className="text-xs text-green-600 ml-2">{toast}</span>}
           <div className="flex-1" />
           <span className="text-xs text-gray-500">
