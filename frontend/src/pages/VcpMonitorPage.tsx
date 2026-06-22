@@ -166,10 +166,12 @@ function ResultsTab() {
 
   // ── 状态摘要统计 ──
   const summary = useMemo(() => {
-    const counts: Record<string, number> = { breakout: 0, forming: 0, extended: 0, failed: 0 }
+    const counts = { breakout: 0, forming: 0, extended: 0, failed: 0 }
     for (const r of results) {
-      const cur = counts[r.status]
-      if (cur !== undefined) counts[r.status] = cur + 1
+      if (r.status === 'breakout') counts.breakout++
+      else if (r.status === 'forming') counts.forming++
+      else if (r.status === 'extended') counts.extended++
+      else if (r.status === 'failed') counts.failed++
     }
     return counts
   }, [results])
