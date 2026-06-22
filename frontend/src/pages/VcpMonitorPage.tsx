@@ -92,8 +92,10 @@ function ResultsTab() {
   useEffect(() => {
     if (runs.length > 0 && selectedRunId === null) {
       const latest = runs[0]
-      setSelectedRunId(latest.id)
-      fetchResults(latest.id)
+      if (latest) {
+        setSelectedRunId(latest.id)
+        fetchResults(latest.id)
+      }
     }
     // eslint-disable-next-line
   }, [runs])
@@ -166,7 +168,8 @@ function ResultsTab() {
   const summary = useMemo(() => {
     const counts: Record<string, number> = { breakout: 0, forming: 0, extended: 0, failed: 0 }
     for (const r of results) {
-      if (counts[r.status] !== undefined) counts[r.status]++
+      const cur = counts[r.status]
+      if (cur !== undefined) counts[r.status] = cur + 1
     }
     return counts
   }, [results])
