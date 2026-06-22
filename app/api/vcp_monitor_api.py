@@ -21,7 +21,7 @@ from db.models import (
     SessionLocal, VcpWatchlist, VcpScanRun, VcpScanResult, VcpAlert,
     ScreenerResult,
 )
-from app.vcp_monitor.scanner import run_vcp_scan, seed_from_sepa_results
+from app.vcp_monitor.scanner import run_vcp_scan, run_vcp_scan_from_screener, seed_from_sepa_results
 from app.vcp_monitor.detector import detect_vcp
 from app.data.yfinance_provider import YFinanceProvider
 from app.data.rs_rating import get_rs_snapshot
@@ -119,10 +119,18 @@ def remove_from_watchlist(item_id: int):
 # ── Scan Endpoints ──
 
 @router.post("/scan")
-async def trigger_scan():
-    """Trigger a manual VCP scan."""
+async def trigger_scan(source: str = "screener"):
+    """Trigger a manual VCP scan.
+
+    source:
+      - 'screener' (默认): 扫描最新选股器 passed 全部股票, 拒绝原因也持久化
+      - 'watchlist': 扫描 VcpWatchlist enabled 股票 (历史行为)
+    """
     try:
-        run_id = await run_vcp_scan(trigger="manual")
+        if source == "watchlist":
+            run_id = await run_vcp_scan(trigger="manual")
+        else:
+            run_id = await run_vcp_scan_from_screener(trigger="manual_screener")
         return {"run_id": run_id, "status": "completed"}
     except RuntimeError as e:
         raise HTTPException(409, str(e))
@@ -224,6 +232,7 @@ def get_scan_results(run_id: int):
                 "rs_percentile": r.rs_percentile,
                 "sector": sector_map.get(r.symbol, ""),
                 "last_alert_at": last_alert_map.get(r.symbol),
+                "reject_reason": r.reject_reason,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in results

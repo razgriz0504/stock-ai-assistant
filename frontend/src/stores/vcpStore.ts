@@ -47,6 +47,7 @@ export interface VcpScanResult {
   rs_percentile: number | null
   sector: string
   last_alert_at: string | null
+  reject_reason: string | null
   created_at: string | null
 }
 
@@ -89,7 +90,7 @@ interface VcpState {
   fetchWatchlist: () => Promise<void>
   addSymbol: (symbol: string, note?: string) => Promise<void>
   removeSymbol: (id: number) => Promise<void>
-  startScan: () => Promise<void>
+  startScan: (source?: string) => Promise<void>
   fetchRuns: () => Promise<void>
   fetchResults: (runId: number) => Promise<void>
   fetchDetail: (symbol: string) => Promise<void>
@@ -123,11 +124,10 @@ export const useVcpStore = create<VcpState>((set) => ({
     set({ watchlist: data })
   },
 
-  startScan: async () => {
+  startScan: async (source: string = 'screener') => {
     set({ scanning: true })
     try {
-      await api.post('/api/vcp-monitor/scan')
-      // Refresh runs after scan completes
+      await api.post(`/api/vcp-monitor/scan?source=${source}`)
       const { data } = await api.get('/api/vcp-monitor/runs')
       set({ runs: data, scanning: false })
     } catch {

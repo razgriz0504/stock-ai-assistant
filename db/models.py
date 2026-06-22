@@ -310,6 +310,8 @@ def _migrate_missing_columns():
         ("report_config", "default_sector_strength_system_prompt", "TEXT DEFAULT ''"),
         # VCP 监控：扫描时刻最新收盘价（用于计算距 Pivot 百分比）
         ("vcp_scan_results", "last_close", "REAL DEFAULT NULL"),
+        # VCP 监控：拒绝原因（status=rejected_vcp 时记录具体原因标记）
+        ("vcp_scan_results", "reject_reason", "TEXT DEFAULT NULL"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
@@ -371,13 +373,14 @@ class VcpScanResult(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     run_id = Column(Integer, nullable=False, index=True)
     symbol = Column(String(10), nullable=False, index=True)
-    status = Column(String(20), default="forming")       # "forming" / "breakout" / "failed"
+    status = Column(String(20), default="forming")       # forming/breakout/extended/failed/rejected_vcp
     score = Column(Integer, default=0)                   # 0-100 质量评分
     pivot_price = Column(Float, nullable=True)
     last_close = Column(Float, nullable=True)            # 扫描时刻最新收盘价（计算 distance_pct）
     contractions_json = Column(Text, default="[]")       # JSON: 收缩序列坐标
     volume_dry_ratio = Column(Float, nullable=True)      # 量能干枯比
     rs_percentile = Column(Float, nullable=True)
+    reject_reason = Column(Text, nullable=True)          # status=rejected_vcp 时的拒绝原因标记
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 

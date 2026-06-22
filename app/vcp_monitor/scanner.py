@@ -21,7 +21,7 @@ from db.models import (
 )
 from app.data.yfinance_provider import YFinanceProvider
 from app.data.rs_rating import get_rs_snapshot
-from app.vcp_monitor.detector import detect_vcp, Contraction
+from app.vcp_monitor.detector import detect_vcp, detect_vcp_with_reason, Contraction
 from app.screener.filters import (
     filter_sepa_ma_position, filter_sepa_sma200_trend,
     filter_sepa_52w_low, filter_sepa_52w_high, filter_sepa_rs_rating,
@@ -49,6 +49,21 @@ async def run_vcp_scan(trigger: str = "manual") -> int:
 
     async with _scan_lock:
         return await _execute_scan(trigger)
+
+
+async def run_vcp_scan_from_screener(trigger: str = "manual") -> int:
+    """从最新 ScreenerRun 的 passed 股票扫描 VCP。返回 run_id。
+
+    与 run_vcp_scan 的区别:
+    - 候选池不是 VcpWatchlist 而是最新选股器 passed=True 全部股票
+    - 跳过 _passes_sepa 二次过滤（选股器已保证通过默认 SEPA）
+    - 被 VCP detector 拒绝的股票也会写入 vcp_scan_results, status='rejected_vcp', 附 reject_reason
+    """
+    if _scan_lock.locked():
+        raise RuntimeError("A VCP scan is already running")
+
+    async with _scan_lock:
+        return await _execute_scan_from_screener(trigger)
 
 
 async def _execute_scan(trigger: str) -> int:
@@ -178,6 +193,140 @@ def _compute_sma(df: pd.DataFrame) -> pd.DataFrame:
     df.ta.sma(length=150, append=True)
     df.ta.sma(length=200, append=True)
     return df
+
+
+async def _execute_scan_from_screener(trigger: str) -> int:
+    """从最新 ScreenerRun 的 passed 股票扫描。被 VCP 拒绝的也持久化。"""
+    db = SessionLocal()
+
+    run = VcpScanRun(trigger=trigger, status="running")
+    db.add(run)
+    db.commit()
+    run_id = run.id
+
+    try:
+        # 取最新选股器 passed 股票列表
+        latest_run = db.query(ScreenerRun).filter_by(status="completed").order_by(
+            ScreenerRun.id.desc()
+        ).first()
+        if not latest_run:
+            db.close()
+            _update_run(run_id, status="completed", total=0, detected=0)
+            return run_id
+
+        passed_rows = db.query(ScreenerResult).filter_by(
+            run_id=latest_run.id, passed=True
+        ).order_by(ScreenerResult.score.desc()).all()
+        symbols = [r.symbol for r in passed_rows]
+        db.close()
+
+        if not symbols:
+            _update_run(run_id, status="completed", total=0, detected=0)
+            return run_id
+
+        logger.info(f"VCP scan from screener#{latest_run.version}: {len(symbols)} symbols")
+
+        history_data = await asyncio.to_thread(_yf.get_batch_history, symbols, "1y")
+        rs_snapshot = await asyncio.to_thread(get_rs_snapshot, symbols)
+
+        results: list[VcpScanResult] = []
+        detected_count = 0
+
+        for sym in symbols:
+            df = history_data.get(sym)
+            try:
+                last_close = float(df.iloc[-1]["Close"]) if df is not None and not df.empty else None
+            except Exception:
+                last_close = None
+
+            if df is None or df.empty or len(df) < 200:
+                results.append(VcpScanResult(
+                    run_id=run_id,
+                    symbol=sym,
+                    status="rejected_vcp",
+                    score=0,
+                    pivot_price=None,
+                    last_close=last_close,
+                    contractions_json="[]",
+                    volume_dry_ratio=None,
+                    rs_percentile=rs_snapshot.get(sym, 0.0),
+                    reject_reason="data_insufficient",
+                ))
+                continue
+
+            df = _compute_sma(df)
+            rs = rs_snapshot.get(sym, 0.0)
+
+            vcp_result, reason = detect_vcp_with_reason(df, rs_percentile=rs)
+
+            if vcp_result is None:
+                results.append(VcpScanResult(
+                    run_id=run_id,
+                    symbol=sym,
+                    status="rejected_vcp",
+                    score=0,
+                    pivot_price=None,
+                    last_close=last_close,
+                    contractions_json="[]",
+                    volume_dry_ratio=None,
+                    rs_percentile=rs,
+                    reject_reason=reason or "unknown",
+                ))
+                continue
+
+            detected_count += 1
+            contractions_data = [
+                {
+                    "name": c.name,
+                    "start_date": c.start_date,
+                    "end_date": c.end_date,
+                    "high": c.high,
+                    "low": c.low,
+                    "depth_pct": c.depth_pct,
+                    "avg_volume": c.avg_volume,
+                }
+                for c in vcp_result.contractions
+            ]
+
+            results.append(VcpScanResult(
+                run_id=run_id,
+                symbol=sym,
+                status=vcp_result.status,
+                score=vcp_result.score,
+                pivot_price=vcp_result.pivot_price,
+                last_close=last_close,
+                contractions_json=json.dumps(contractions_data),
+                volume_dry_ratio=vcp_result.volume_dry_ratio,
+                rs_percentile=rs,
+                reject_reason=None,
+            ))
+
+        db = SessionLocal()
+        try:
+            if results:
+                db.bulk_save_objects(results)
+            run_record = db.query(VcpScanRun).filter_by(id=run_id).first()
+            if run_record:
+                run_record.status = "completed"
+                run_record.total = len(symbols)
+                run_record.detected = detected_count
+                run_record.finished_at = datetime.now(timezone.utc)
+            db.commit()
+        finally:
+            db.close()
+
+        await _process_alerts(run_id)
+
+        logger.info(
+            f"VCP scan from screener completed: {detected_count}/{len(symbols)} detected, "
+            f"{len(results) - detected_count} rejected"
+        )
+        return run_id
+
+    except Exception as e:
+        logger.error(f"VCP scan from screener failed: {e}", exc_info=True)
+        _update_run(run_id, status="failed")
+        raise
 
 
 def _passes_sepa(df: pd.DataFrame, info: dict) -> bool:

@@ -55,8 +55,24 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
     Returns:
         VcpResult if a valid VCP pattern is detected, None otherwise.
     """
+    result, _ = detect_vcp_with_reason(df, rs_percentile)
+    return result
+
+
+def detect_vcp_with_reason(
+    df: pd.DataFrame, rs_percentile: float = 50.0
+) -> tuple[Optional[VcpResult], Optional[str]]:
+    """诊断版 detect_vcp: 同时返回拒绝原因。
+
+    Returns:
+        (VcpResult, None) 检测成功
+        (None, reason_str) 被拒绝, reason_str 为类别标记:
+            data_insufficient / no_base_high / base_too_short /
+            no_contractions / too_few_contractions / t1_depth_X /
+            expansion / last_not_tight / not_diminishing / exception
+    """
     if df.empty or len(df) < 60:
-        return None
+        return None, "data_insufficient"
 
     try:
         # Ensure we work with a clean copy
@@ -67,21 +83,22 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
         # Step 1: Find the base start (significant swing high using large window)
         base_high_idx = _find_base_high(df)
         if base_high_idx is None:
-            return None
+            return None, "no_base_high"
 
         # The base is from base_high_idx to end of data
         base_df = df.iloc[base_high_idx:]
         if len(base_df) < 15:  # Need minimum base length
-            return None
+            return None, "base_too_short"
 
         # Step 2: Extract contractions using small window within the base
         contractions = _extract_contractions(base_df)
         if not contractions:
-            return None
+            return None, "no_contractions"
 
         # Step 3: Validate contraction sequence
-        if not _validate_contractions(contractions):
-            return None
+        validate_reason = _validate_contractions_with_reason(contractions)
+        if validate_reason is not None:
+            return None, validate_reason
 
         # Step 4: Determine pivot and status
         pivot_price = contractions[-1].high
@@ -122,11 +139,11 @@ def detect_vcp(df: pd.DataFrame, rs_percentile: float = 50.0) -> Optional[VcpRes
             contractions=contractions,
             volume_dry_ratio=round(volume_dry_ratio, 3),
             breakout_volume_surge=bool(volume_surge and status == "breakout"),
-        )
+        ), None
 
     except Exception as e:
         logger.debug(f"VCP detection error: {e}")
-        return None
+        return None, f"exception:{type(e).__name__}"
 
 
 def _find_base_high(df: pd.DataFrame) -> Optional[int]:
@@ -267,7 +284,14 @@ def _extract_contractions(base_df: pd.DataFrame) -> list[Contraction]:
 
 
 def _validate_contractions(contractions: list[Contraction]) -> bool:
-    """Validate that contractions form a valid VCP pattern.
+    """Validate that contractions form a valid VCP pattern (boolean wrapper)."""
+    return _validate_contractions_with_reason(contractions) is None
+
+
+def _validate_contractions_with_reason(
+    contractions: list[Contraction],
+) -> Optional[str]:
+    """诊断版: 返回 None 表示通过, 返回字符串表示被拒绝的具体原因.
 
     Rules:
     - At least 2 contractions
@@ -277,41 +301,38 @@ def _validate_contractions(contractions: list[Contraction]) -> bool:
     - Overall pattern shows clear tightening (last < 50% of first)
     """
     if len(contractions) < 2:
-        return False
+        return "too_few_contractions"
 
     # T1 must be between 10% and 40%
     t1_depth = contractions[0].depth_pct
-    if t1_depth < 10 or t1_depth > 40:
-        return False
+    if t1_depth < 10:
+        return f"t1_depth_too_shallow:{t1_depth:.1f}%"
+    if t1_depth > 40:
+        return f"t1_depth_too_deep:{t1_depth:.1f}%"
 
     # ── Strict monotonic decrease check ──
-    # Each contraction must be <= previous + tolerance (1%)
-    # Allow AT MOST one violation across the entire sequence
-    TOLERANCE_PCT = 1.0  # Allow 1% overshoot
+    TOLERANCE_PCT = 1.0
     violations = 0
     for i in range(1, len(contractions)):
-        # 显式 round 规避浮点精度残留 (0.1 + 0.2 != 0.3 类问题)
         curr = round(contractions[i].depth_pct, 2)
         prev = round(contractions[i - 1].depth_pct, 2)
         if curr > round(prev + TOLERANCE_PCT, 2):
             violations += 1
 
-    # Zero tolerance for expansion when we have few contractions
-    # Allow 1 violation only if we have 4+ contractions
     max_allowed_violations = 1 if len(contractions) >= 4 else 0
     if violations > max_allowed_violations:
-        return False
+        return f"expansion:{violations}_violations"
 
     # ── Last contraction must be tight (< 5%) ──
     last_depth = contractions[-1].depth_pct
     if last_depth >= 5.0:
-        return False
+        return f"last_not_tight:{last_depth:.1f}%"
 
     # ── Overall tightening: last must be < 50% of first ──
     if last_depth >= t1_depth * 0.50:
-        return False
+        return f"not_diminishing:T1={t1_depth:.1f}%,Tn={last_depth:.1f}%"
 
-    return True
+    return None
 
 
 def _calculate_score(

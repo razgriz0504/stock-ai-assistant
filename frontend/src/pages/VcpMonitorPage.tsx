@@ -14,6 +14,7 @@ const STATUS_ORDER: Record<string, number> = {
   forming: 1,
   extended: 2,
   failed: 3,
+  rejected_vcp: 4,
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -21,6 +22,7 @@ const STATUS_LABEL: Record<string, string> = {
   forming: '构筑中',
   extended: '已延伸',
   failed: '失败',
+  rejected_vcp: '非 VCP',
 }
 
 const STATUS_BADGE: Record<string, 'default' | 'success' | 'danger' | 'warning' | 'copper'> = {
@@ -28,6 +30,30 @@ const STATUS_BADGE: Record<string, 'default' | 'success' | 'danger' | 'warning' 
   forming: 'warning',
   extended: 'copper',
   failed: 'danger',
+  rejected_vcp: 'default',
+}
+
+// 拒绝原因码 → 人类可读映射
+const REJECT_REASON_LABEL: Record<string, string> = {
+  data_insufficient: '数据不足 (<200 bar)',
+  no_base_high: '未找到基底高点',
+  base_too_short: '基底太短 (<15 bar)',
+  no_contractions: '未提取到收缩',
+  too_few_contractions: '收缩不足 2 次',
+  unknown: '未知原因',
+}
+
+function prettyRejectReason(reason: string | null | undefined): string {
+  if (!reason) return '-'
+  if (REJECT_REASON_LABEL[reason]) return REJECT_REASON_LABEL[reason] as string
+  // 含占位符的拒绝原因 (t1_depth_too_shallow:8.3% 等)
+  if (reason.startsWith('t1_depth_too_shallow')) return `T1 过浅 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('t1_depth_too_deep')) return `T1 过深 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('expansion')) return `出现扩张 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('last_not_tight')) return `末段不够紧 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('not_diminishing')) return `未递减 (${reason.split(':')[1] || ''})`
+  if (reason.startsWith('exception')) return `异常 (${reason.split(':')[1] || ''})`
+  return reason
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -166,12 +192,13 @@ function ResultsTab() {
 
   // ── 状态摘要统计 ──
   const summary = useMemo(() => {
-    const counts = { breakout: 0, forming: 0, extended: 0, failed: 0 }
+    const counts = { breakout: 0, forming: 0, extended: 0, failed: 0, rejected_vcp: 0 }
     for (const r of results) {
       if (r.status === 'breakout') counts.breakout++
       else if (r.status === 'forming') counts.forming++
       else if (r.status === 'extended') counts.extended++
       else if (r.status === 'failed') counts.failed++
+      else if (r.status === 'rejected_vcp') counts.rejected_vcp++
     }
     return counts
   }, [results])
@@ -262,6 +289,12 @@ function ResultsTab() {
             onClick={() => setStatusFilter(statusFilter === 'failed' ? null : 'failed')}
             color="danger"
           />
+          <SummaryChip
+            label="非 VCP" count={summary.rejected_vcp}
+            active={statusFilter === 'rejected_vcp'}
+            onClick={() => setStatusFilter(statusFilter === 'rejected_vcp' ? null : 'rejected_vcp')}
+            color="default"
+          />
           <div className="flex-1" />
           <span className="text-gray-400">
             批次 #{selectedRun.id} · {selectedRun.finished_at ? new Date(selectedRun.finished_at).toLocaleString() : '进行中'}
@@ -281,7 +314,7 @@ function ResultsTab() {
                 <th className="px-3 py-2 text-right">评分</th>
                 <th className="px-3 py-2 text-right">Pivot</th>
                 <th className="px-3 py-2 text-right">距 Pivot</th>
-                <th className="px-3 py-2 text-right">收缩链</th>
+                <th className="px-3 py-2 text-right">收缩链 / 原因</th>
                 <th className="px-3 py-2 text-right">RS</th>
                 <th className="px-3 py-2 text-right">最后告警</th>
               </tr>
@@ -407,7 +440,9 @@ function ResultRow({
             : '-'}
         </td>
         <td className="px-3 py-2 text-right text-xs text-gray-500 whitespace-nowrap">
-          {r.contractions.map(c => `${c.depth_pct}%`).join(' → ') || '-'}
+          {r.status === 'rejected_vcp'
+            ? <span className="text-gray-400 italic">{prettyRejectReason(r.reject_reason)}</span>
+            : (r.contractions.map(c => `${c.depth_pct}%`).join(' → ') || '-')}
         </td>
         <td className="px-3 py-2 text-right font-mono text-sm">
           {r.rs_percentile !== null && r.rs_percentile !== undefined ? r.rs_percentile.toFixed(0) : '-'}
