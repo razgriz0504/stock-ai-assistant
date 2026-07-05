@@ -359,7 +359,7 @@ function ProsperityResult({ data }: { data?: Record<string, unknown> }) {
           {trendLabel}
         </Badge>
       </div>
-      {data.summary && <p className="text-sm text-gray-700 mb-4">{String(data.summary)}</p>}
+      {!!data.summary && <p className="text-sm text-gray-700 mb-4">{String(data.summary)}</p>}
       {themes.length > 0 && (
         <div className="space-y-2 mb-4">
           {themes.map((t, i) => (
@@ -432,7 +432,7 @@ function AnomalyResult({ data }: { data?: Record<string, unknown> }) {
   }
   return (
     <ResultCard>
-      {data.summary && <p className="text-sm text-gray-700 mb-4">{String(data.summary)}</p>}
+      {!!data.summary && <p className="text-sm text-gray-700 mb-4">{String(data.summary)}</p>}
       {anomalies.length === 0 ? (
         <p className="text-sm text-gray-400">未识别到明显异动</p>
       ) : (
