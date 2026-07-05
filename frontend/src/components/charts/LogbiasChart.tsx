@@ -112,7 +112,7 @@ export default function LogbiasChart({
         axisPointer: { type: 'line' },
         formatter: (params: TooltipParam[]) => {
           if (!params.length) return ''
-          const idx = params[0].dataIndex
+          const idx = params[0]?.dataIndex ?? 0
           let html = `${dates[idx]}<br/>`
           for (const p of params) {
             html += `${p.seriesName}: <strong>${Number(p.value).toFixed(2)}%</strong><br/>`
