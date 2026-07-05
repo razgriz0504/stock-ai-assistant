@@ -150,7 +150,15 @@ async def chat(
     system_prompt: str = "",
     model: str = "",
     web_search: bool = False,
+    inline_citations: bool = True,
 ) -> str:
+    """调用 LLM。
+
+    inline_citations: 仅在 web_search=True 时生效。为 True 时把联网来源以
+    `[1](url)` 形式内联进正文并追加来源列表（适合 Markdown 叙事）；
+    对要求纯 JSON 输出的结构化能力必须传 False，否则引用角标会插入 JSON
+    结构缝隙导致 json.loads 解析失败。
+    """
     use_model = model or _current_model
     messages = []
     if system_prompt:
@@ -197,7 +205,8 @@ async def chat(
             return "AI 返回内容为空，请稍后重试"
 
         # 若启用了联网搜索，提取 groundingMetadata 并添加内联引用
-        if web_search:
+        # 结构化 JSON 场景（inline_citations=False）跳过，避免角标污染 JSON
+        if web_search and inline_citations:
             grounding_metadata = _get_grounding_metadata(response)
             if grounding_metadata:
                 logger.info(f"Grounding metadata found: {len(grounding_metadata)} entries")

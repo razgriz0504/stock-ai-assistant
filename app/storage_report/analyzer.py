@@ -39,9 +39,18 @@ def _strip_code_fence(s: str) -> str:
     return s.strip()
 
 
+def _strip_citations(s: str) -> str:
+    """移除联网 grounding 引用角标，避免其插入 JSON 结构缝隙导致解析失败。
+    覆盖 [1](url) markdown 链接式与 [1] / [1, 2] 纯方括号式。"""
+    s = re.sub(r"\s*\[\d+\]\([^)]*\)", "", s)
+    s = re.sub(r"\s*\[\d+(?:\s*,\s*\d+)*\]", "", s)
+    return s
+
+
 def _extract_json(s: str) -> dict | None:
     """容错地从 LLM 输出中抽取 JSON 对象"""
     s = _strip_code_fence(s)
+    s = _strip_citations(s)
     try:
         return json.loads(s)
     except json.JSONDecodeError:
@@ -141,7 +150,7 @@ async def analyze_prosperity(
         ensure_ascii=False,
     )
     try:
-        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True)
+        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True, inline_citations=False)
     except Exception as e:
         logger.error(f"analyze_prosperity failed: {e}")
         return {"error": "AI 分析暂不可用", "raw": ""}
@@ -165,7 +174,7 @@ async def analyze_price_trend(
         ensure_ascii=False,
     )
     try:
-        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True)
+        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True, inline_citations=False)
     except Exception as e:
         logger.error(f"analyze_price_trend failed: {e}")
         return {"error": "AI 分析暂不可用", "raw": ""}
@@ -212,7 +221,7 @@ async def detect_anomaly(time_range: str, prompt: Optional[str] = None) -> dict:
     sys_prompt = (prompt or "").strip() or DEFAULT_ANOMALY_PROMPT
     user_prompt = f"时间范围：{time_range}\n请识别存储行业景气度异动信号。"
     try:
-        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True)
+        raw = await chat(user_prompt, system_prompt=sys_prompt, web_search=True, inline_citations=False)
     except Exception as e:
         logger.error(f"detect_anomaly failed: {e}")
         return {"error": "AI 分析暂不可用", "raw": ""}
