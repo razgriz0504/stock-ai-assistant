@@ -273,6 +273,62 @@ class XTweet(Base):
     processing_error = Column(Text, default="")
 
 
+# ═══════════════════════════════════════════════════════════════
+# 存储行业研究报告相关表（DRAM/NAND/HBM/SSD/HDD）
+# ═══════════════════════════════════════════════════════════════
+
+class StorageReport(Base):
+    """存储行业研究报告 - 版本化存储"""
+    __tablename__ = "storage_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    version = Column(Integer, nullable=False, index=True)
+    report_date = Column(DateTime, index=True)
+    status = Column(String(20), default="running")     # running / completed / failed
+    trigger = Column(String(20), default="manual")      # manual / scheduled
+    model_name = Column(String(100), default="")
+    categories = Column(Text, default="[]")             # JSON: 本次品类
+    time_range = Column(String(40), default="")
+    # --- 六大 section 结果（Text 存 markdown 或 JSON）---
+    metric_data = Column(Text, default="")
+    prosperity_data = Column(Text, default="")
+    price_trend_data = Column(Text, default="")
+    supply_demand_data = Column(Text, default="")
+    vendor_data = Column(Text, default="")
+    anomaly_data = Column(Text, default="")
+    # --- Prompt 审计快照 ---
+    prosperity_system_prompt = Column(Text, default="")
+    price_trend_system_prompt = Column(Text, default="")
+    supply_demand_system_prompt = Column(Text, default="")
+    vendor_system_prompt = Column(Text, default="")
+    anomaly_system_prompt = Column(Text, default="")
+    error_message = Column(Text, default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class StorageReportConfig(Base):
+    """存储行业研究报告配置（单例表，id=1）"""
+    __tablename__ = "storage_report_config"
+
+    id = Column(Integer, primary_key=True, default=1)
+    # --- 定时生成 ---
+    schedule_enabled = Column(Boolean, default=False)
+    schedule_day_of_week = Column(String(10), default="mon")
+    schedule_hour = Column(Integer, default=8)                  # ET 时区
+    schedule_minute = Column(Integer, default=0)
+    # --- 默认参数 ---
+    default_categories = Column(Text, default='["DRAM","NAND","HBM"]')
+    # --- 默认 Prompt ---
+    default_metric_system_prompt = Column(Text, default="")
+    default_prosperity_system_prompt = Column(Text, default="")
+    default_price_trend_system_prompt = Column(Text, default="")
+    default_supply_demand_system_prompt = Column(Text, default="")
+    default_vendor_system_prompt = Column(Text, default="")
+    default_anomaly_system_prompt = Column(Text, default="")
+    # --- 元数据 ---
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
 def init_db():
     """初始化数据库，创建所有表 + 自动迁移缺失列"""
     Base.metadata.create_all(bind=engine)

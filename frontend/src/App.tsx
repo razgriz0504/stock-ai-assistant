@@ -8,6 +8,7 @@ const ReportPage = lazy(() => import('@/pages/ReportPage'))
 const ScreenerPage = lazy(() => import('@/pages/ScreenerPage'))
 const SectorStrengthPage = lazy(() => import('@/pages/SectorStrengthPage'))
 const VcpMonitorPage = lazy(() => import('@/pages/VcpMonitorPage'))
+const StorageReportPage = lazy(() => import('@/pages/StorageReportPage'))
 const BacktestPage = lazy(() => import('@/pages/BacktestPage'))
 const XMonitorPage = lazy(() => import('@/pages/XMonitorPage'))
 const WatchlistPage = lazy(() => import('@/pages/WatchlistPage'))
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="/screener" element={<ScreenerPage />} />
           <Route path="/sector-strength" element={<SectorStrengthPage />} />
           <Route path="/vcp-monitor" element={<VcpMonitorPage />} />
+          <Route path="/storage-report" element={<StorageReportPage />} />
           <Route path="/backtest" element={<BacktestPage />} />
           <Route path="/x-monitor" element={<XMonitorPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />

@@ -446,3 +446,74 @@ def restore_vcp_schedule():
     # VCP 扫描 17:00 ET
     add_vcp_scan_job(hour=17, minute=0)
     logger.info("VCP schedule restored (RS 16:30, scan 17:00 ET)")
+
+
+# ─── 存储行业研究报告定时任务 ───
+
+def add_storage_report_job(day_of_week: str = "mon", hour: int = 8, minute: int = 0):
+    """添加/更新存储行业研究报告定时生成任务"""
+    scheduler.add_job(
+        _run_storage_report_job,
+        CronTrigger(day_of_week=day_of_week, hour=hour, minute=minute, timezone=ET),
+        id="storage_report_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"Storage report job scheduled at {day_of_week} {hour:02d}:{minute:02d} ET")
+
+
+def remove_storage_report_job():
+    """移除存储行业研究报告定时生成任务"""
+    try:
+        scheduler.remove_job("storage_report_scheduled")
+        logger.info("Storage report job removed")
+    except Exception:
+        pass
+
+
+async def _run_storage_report_job():
+    """定时生成完整存储行业研究报告"""
+    import json
+    from db.models import SessionLocal, StorageReportConfig
+    from app.storage_report.analyzer import generate_full_report
+
+    logger.info("Scheduled storage report job triggered")
+    db = SessionLocal()
+    try:
+        cfg = db.query(StorageReportConfig).filter_by(id=1).first()
+        cats = None
+        if cfg and cfg.default_categories:
+            try:
+                cats = json.loads(cfg.default_categories)
+            except (json.JSONDecodeError, TypeError):
+                cats = None
+        result = await generate_full_report(db, categories=cats, trigger="scheduled")
+        if "error" in result:
+            logger.error(f"Scheduled storage report failed: {result['error']}")
+        else:
+            logger.info(f"Scheduled storage report completed: v{result.get('version')}")
+    except Exception as e:
+        logger.error(f"Scheduled storage report job error: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
+def restore_storage_report_schedule():
+    """启动时从 DB 恢复存储行业研究报告定时任务配置"""
+    from db.models import SessionLocal, StorageReportConfig
+
+    db = SessionLocal()
+    try:
+        cfg = db.query(StorageReportConfig).filter_by(id=1).first()
+        if cfg and cfg.schedule_enabled:
+            add_storage_report_job(
+                day_of_week=cfg.schedule_day_of_week,
+                hour=cfg.schedule_hour,
+                minute=cfg.schedule_minute,
+            )
+            logger.info("Storage report schedule restored from DB config")
+        else:
+            logger.info("Storage report schedule is disabled or not configured")
+    except Exception as e:
+        logger.error(f"Failed to restore storage report schedule: {e}")
+    finally:
+        db.close()

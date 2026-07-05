@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
+import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Card, Button, Badge } from '@/components/ui'
+import LogbiasChart from '@/components/charts/LogbiasChart'
 
 // SPDR 板块 ETF → yfinance 中的 sector 名称
 const SPDR_TO_SECTOR: Record<string, string> = {
@@ -31,14 +33,26 @@ interface SectorItem {
   vol_ratio: number
   rs: { composite: number | null; rs_5d: number | null; rs_15d: number | null; rs_30d: number | null; rs_60d: number | null }
   flow: { direction: string; flow_5d: number | null; vol_surge: number | null; accumulation: number | null }
+  logbias: { value: number | null; zone: string; series: number[]; dates: string[] }
 }
 
-type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio'
+// LOGBIAS 状态区间 → 展示样式
+const ZONE_META: Record<string, { label: string; cls: string }> = {
+  overheated: { label: '过热', cls: 'bg-red-100 text-red-700' },
+  moderate: { label: '适中', cls: 'bg-amber-100 text-amber-700' },
+  above: { label: '均线上方', cls: 'bg-green-100 text-green-700' },
+  hold: { label: '刚跌破', cls: 'bg-gray-100 text-gray-600' },
+  exit: { label: '失速', cls: 'bg-red-100 text-red-700' },
+  unknown: { label: '-', cls: 'bg-gray-50 text-gray-400' },
+}
+
+type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio' | 'logbias'
 
 export default function SectorStrengthPage() {
   const navigate = useNavigate()
   const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['sector-strength'],
@@ -58,6 +72,7 @@ export default function SectorStrengthPage() {
     if (key === 'chg_15d') return s.chg_15d ?? -999
     if (key === 'chg_30d') return s.chg_30d ?? -999
     if (key === 'vol_ratio') return s.vol_ratio ?? 0
+    if (key === 'logbias') return s.logbias?.value ?? -999
     return 0
   }
 
@@ -127,6 +142,7 @@ export default function SectorStrengthPage() {
           <option value="chg_15d">15日涨跌</option>
           <option value="chg_30d">30日涨跌</option>
           <option value="vol_ratio">量比</option>
+          <option value="logbias">偏离度</option>
         </select>
       </div>
 
@@ -149,6 +165,7 @@ export default function SectorStrengthPage() {
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">15日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">30日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">RS</th>
+                  <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">偏离度</th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">资金流向</th>
                 </tr>
               </thead>
@@ -156,26 +173,33 @@ export default function SectorStrengthPage() {
                 {filtered.map((s, i) => {
                   const sectorName = SPDR_TO_SECTOR[s.symbol]
                   const clickable = !!sectorName
-                  const handleClick = () => {
-                    if (clickable) {
-                      navigate(`/screener?sector=${encodeURIComponent(sectorName)}&autorun=1`)
-                    }
+                  const isExpanded = expanded === s.symbol
+                  const zone = ZONE_META[s.logbias?.zone] || ZONE_META.unknown
+                  const goScreener = (e: MouseEvent) => {
+                    e.stopPropagation()
+                    navigate(`/screener?sector=${encodeURIComponent(sectorName)}&autorun=1`)
                   }
                   return (
+                    <Fragment key={s.symbol}>
                     <tr
-                      key={s.symbol}
-                      onClick={handleClick}
-                      className={`border-b border-cream-200 transition-colors ${
-                        clickable ? 'hover:bg-orange-50 cursor-pointer' : 'hover:bg-cream-50'
+                      onClick={() => setExpanded(isExpanded ? null : s.symbol)}
+                      className={`border-b border-cream-200 transition-colors cursor-pointer ${
+                        isExpanded ? 'bg-orange-50' : 'hover:bg-cream-50'
                       }`}
-                      title={clickable ? `点击锁定${s.name}板块运行选股` : '主题 ETF 不支持锁定选股'}
+                      title="点击展开对数均线偏离度曲线"
                     >
                       <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
                       <td className="px-4 py-3">
                         <span className="font-mono font-semibold text-xs">{s.symbol}</span>
                         <span className="text-xs text-gray-500 ml-2">{s.name}</span>
                         {clickable && (
-                          <span className="ml-2 text-[10px] text-copper opacity-0 group-hover:opacity-100">→ 选股</span>
+                          <button
+                            onClick={goScreener}
+                            className="ml-2 text-[10px] text-copper hover:underline"
+                            title={`锁定${s.name}板块运行选股`}
+                          >
+                            → 选股
+                          </button>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -192,12 +216,30 @@ export default function SectorStrengthPage() {
                         {fmtPct(s.chg_30d)}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs?.composite?.toFixed(1) ?? '-'}</td>
+                      <td className="px-4 py-3 text-center whitespace-nowrap">
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono ${zone.cls}`}>
+                          <span className="font-semibold">{s.logbias?.value != null ? `${s.logbias.value > 0 ? '+' : ''}${s.logbias.value.toFixed(1)}` : '-'}</span>
+                          <span>{zone.label}</span>
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-center">
                         <Badge variant={s.flow?.direction === 'inflow' ? 'success' : s.flow?.direction === 'outflow' ? 'danger' : 'default'}>
                           {s.flow?.direction === 'inflow' ? '流入' : s.flow?.direction === 'outflow' ? '流出' : '中性'}
                         </Badge>
                       </td>
                     </tr>
+                    {isExpanded && (
+                      <tr className="bg-cream-50 border-b border-cream-200">
+                        <td colSpan={10} className="px-6 py-4">
+                          <LogbiasChart
+                            series={s.logbias?.series || []}
+                            dates={s.logbias?.dates || []}
+                            value={s.logbias?.value ?? null}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                 })}
               </tbody>

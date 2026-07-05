@@ -129,6 +129,54 @@ def _compute_performance(df: pd.DataFrame) -> dict:
     }
 
 
+# ─── 对数均线偏离度 (LOGBIAS) ───
+# 刘晨明/广发策略「对数均线偏离度」减法版：
+#   EMA20 = EMA(ln(Close), 20)
+#   LOGBIAS = (ln(Close) - EMA20) × 100
+# 注意：先对收盘价取自然对数再算 EMA，而非 ln(EMA(close))。
+
+# 阈值带（减法版，单位 %）
+_LOGBIAS_OVERHEATED = 15.0   # > 15%   过热，别追
+_LOGBIAS_MODERATE = 5.0      # 5%~15%  适中，可追
+_LOGBIAS_ABOVE = 0.0         # 0%~5%   均线上方，安心
+_LOGBIAS_EXIT = -5.0         # -5%~0%  刚跌破，坚守；< -5% 失速，离场
+
+
+def _classify_zone(v: Optional[float]) -> str:
+    """根据 LOGBIAS 数值划分状态区间"""
+    if v is None:
+        return "unknown"
+    if v > _LOGBIAS_OVERHEATED:
+        return "overheated"   # 过热
+    if v >= _LOGBIAS_MODERATE:
+        return "moderate"     # 适中
+    if v >= _LOGBIAS_ABOVE:
+        return "above"        # 均线上方
+    if v >= _LOGBIAS_EXIT:
+        return "hold"         # 刚跌破，坚守
+    return "exit"             # 失速，离场
+
+
+def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 40) -> dict:
+    """计算对数均线偏离度（减法版）及其历史序列"""
+    closes = df["Close"].dropna()
+    if len(closes) < 5:
+        return {"value": None, "zone": "unknown", "series": [], "dates": []}
+
+    ln_close = np.log(closes)
+    ema = ln_close.ewm(span=span, adjust=False).mean()
+    logbias = (ln_close - ema) * 100
+
+    current = round(float(logbias.iloc[-1]), 2)
+    tail = logbias.tail(series_len)
+    return {
+        "value": current,
+        "zone": _classify_zone(current),
+        "series": [round(float(v), 2) for v in tail],
+        "dates": [d.strftime("%m-%d") for d in tail.index],
+    }
+
+
 # ─── 相对强度 (RS) ───
 
 def _compute_rs(etf_closes: pd.Series, spy_closes: pd.Series) -> dict:
@@ -250,6 +298,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
         perf = _compute_performance(df)
         rs = _compute_rs(df["Close"], spy_closes)
         flow = _compute_flow(df)
+        logbias = _compute_logbias(df)
 
         category = "spdr" if symbol in SPDR_SECTORS else "thematic"
 
@@ -265,6 +314,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
             "vol_ratio": perf["vol_ratio"],
             "rs": rs,
             "flow": flow,
+            "logbias": logbias,
         })
 
     # 排序排名
@@ -307,6 +357,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
             "chg_15d": spy_perf["chg_15d"],
             "chg_30d": spy_perf["chg_30d"],
             "chg_60d": spy_perf["chg_60d"],
+            "logbias": _compute_logbias(spy_df),
         },
         "sectors": sorted_by_rs,  # 默认按 RS 排序
         "rankings": rankings,
