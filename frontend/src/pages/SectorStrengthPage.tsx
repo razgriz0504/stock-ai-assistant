@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -6,6 +6,7 @@ import { api } from '@/api/client'
 import { Card, Button, Badge } from '@/components/ui'
 import LogbiasChart from '@/components/charts/LogbiasChart'
 import LogPriceChart from '@/components/charts/LogPriceChart'
+import { exportNodeAsHtml } from '@/utils/exportReport'
 
 // SPDR 板块 ETF → yfinance 中的 sector 名称
 const SPDR_TO_SECTOR: Record<string, string> = {
@@ -69,9 +70,36 @@ type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio' |
 
 export default function SectorStrengthPage() {
   const navigate = useNavigate()
+  const reportRef = useRef<HTMLDivElement>(null)
   const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [showRsHelp, setShowRsHelp] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  // 允许多行同时展开：切换某一行时不影响其它已展开行
+  const toggleExpand = (symbol: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(symbol)) next.delete(symbol)
+      else next.add(symbol)
+      return next
+    })
+  }
+
+  const handleExport = async () => {
+    if (!reportRef.current) return
+    setExporting(true)
+    try {
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+      await exportNodeAsHtml(reportRef.current, {
+        title: '板块强度雷达',
+        filename: `板块强度雷达_${stamp}.html`,
+      })
+    } finally {
+      setExporting(false)
+    }
+  }
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['sector-strength'],
@@ -113,7 +141,7 @@ export default function SectorStrengthPage() {
   }
 
   return (
-    <div>
+    <div ref={reportRef}>
       <div className="mb-8 flex items-end justify-between">
         <div>
           <span className="section-label flex items-center gap-2 mb-3">
@@ -124,11 +152,35 @@ export default function SectorStrengthPage() {
         </div>
         <div className="flex items-center gap-3">
           {updatedAt && <span className="text-xs text-gray-500 font-mono">{updatedAt}</span>}
+          <Button size="sm" variant="ghost" onClick={() => setShowRsHelp(v => !v)}>
+            {showRsHelp ? '收起 RS 说明' : 'RS 说明'}
+          </Button>
+          <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || isLoading}>
+            {exporting ? '导出中...' : '导出'}
+          </Button>
           <Button size="sm" onClick={() => refetch()} disabled={isFetching}>
             {isFetching ? '刷新中...' : '刷新'}
           </Button>
         </div>
       </div>
+
+      {/* RS 说明 */}
+      {showRsHelp && (
+        <Card className="mb-4 p-4 bg-cream-50 border-cream-300">
+          <div className="text-sm text-gray-700 space-y-2 leading-relaxed">
+            <div className="font-semibold text-gray-900">RS 相对强弱（Relative Strength）</div>
+            <p>
+              RS 衡量一个板块相对于大盘（基准：SPY）的表现强弱，而非绝对涨跌。
+              即使板块下跌，只要跌得比大盘少，RS 依然可能为正（强于大盘）。
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-gray-600">
+              <li><strong className="text-gray-800">RS 评分（composite）</strong>：综合 5/15/30/60 日多周期相对表现的加权评分，数值越高代表越强，用于默认排序。</li>
+              <li><strong className="text-gray-800">RS 强弱线（vs SPY）</strong>：展开行中的曲线，以零轴为界——在零轴上方表示近期跑赢大盘，下方表示跑输。</li>
+              <li><strong className="text-gray-800">应用</strong>：优先关注 RS 持续走强、刚从零轴下方上穿的板块（轮动拐点），避开 RS 持续走弱的板块。</li>
+            </ul>
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -184,6 +236,7 @@ export default function SectorStrengthPage() {
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">15日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">30日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">RS</th>
+                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">量比</th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">偏离度</th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">资金流向</th>
                 </tr>
@@ -192,7 +245,7 @@ export default function SectorStrengthPage() {
                 {filtered.map((s, i) => {
                   const sectorName = SPDR_TO_SECTOR[s.symbol]
                   const clickable = !!sectorName
-                  const isExpanded = expanded === s.symbol
+                  const isExpanded = expanded.has(s.symbol)
                   const zone = ZONE_META[s.logbias?.zone ?? 'unknown'] ?? ZONE_META.unknown ?? { label: '-', cls: 'bg-gray-50 text-gray-400' }
                   const goScreener = (e: MouseEvent) => {
                     e.stopPropagation()
@@ -202,7 +255,7 @@ export default function SectorStrengthPage() {
                   return (
                     <Fragment key={s.symbol}>
                     <tr
-                      onClick={() => setExpanded(isExpanded ? null : s.symbol)}
+                      onClick={() => toggleExpand(s.symbol)}
                       className={`border-b border-cream-200 transition-colors cursor-pointer ${
                         isExpanded ? 'bg-orange-50' : 'hover:bg-cream-50'
                       }`}
@@ -236,6 +289,9 @@ export default function SectorStrengthPage() {
                         {fmtPct(s.chg_30d)}
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-xs font-bold">{s.rs?.composite?.toFixed(1) ?? '-'}</td>
+                      <td className={`px-4 py-3 text-right font-mono text-xs ${s.vol_ratio >= 1 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                        {s.vol_ratio != null ? `${s.vol_ratio.toFixed(2)}x` : '-'}
+                      </td>
                       <td className="px-4 py-3 text-center whitespace-nowrap">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono ${zone.cls}`}>
                           <span className="font-semibold">{s.logbias?.value != null ? `${s.logbias.value > 0 ? '+' : ''}${s.logbias.value.toFixed(1)}` : '-'}</span>
@@ -250,7 +306,7 @@ export default function SectorStrengthPage() {
                     </tr>
                     {isExpanded && (
                       <tr className="bg-cream-50 border-b border-cream-200">
-                        <td colSpan={10} className="px-6 py-4">
+                        <td colSpan={11} className="px-6 py-4">
                           <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
                             <span className="font-medium text-gray-600">{s.symbol} {s.name}</span>
                             <span>对数值 ln(Close) + EMA20</span>
