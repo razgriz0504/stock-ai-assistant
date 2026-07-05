@@ -42,8 +42,8 @@ def _strip_code_fence(s: str) -> str:
 def _strip_citations(s: str) -> str:
     """移除联网 grounding 引用角标，避免其插入 JSON 结构缝隙导致解析失败。
     覆盖 [1](url) markdown 链接式与 [1] / [1, 2] 纯方括号式。"""
-    s = re.sub(r"\s*\[\d+\]\([^)]*\)", "", s)
-    s = re.sub(r"\s*\[\d+(?:\s*,\s*\d+)*\]", "", s)
+    s = re.sub(r"\s*\[\d+(?:\.\d+)*\]\([^)]*\)", "", s)
+    s = re.sub(r"\s*\[\d+(?:[.,]\s*\d+)*\]", "", s)
     return s
 
 

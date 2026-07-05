@@ -168,7 +168,7 @@ async def chat(
     try:
         logger.info(f"Calling LLM: {use_model} (web_search={web_search})")
         # 联网搜索模式需要更长的超时时间
-        timeout = 120 if web_search else _LLM_TIMEOUT
+        timeout = 180 if web_search else _LLM_TIMEOUT
         kwargs = {
             "model": use_model,
             "messages": messages,

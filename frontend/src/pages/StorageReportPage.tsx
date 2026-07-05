@@ -15,6 +15,34 @@ const TABS = [
   { id: 'reports', label: '完整报告' },
 ]
 
+function stripFenceAndCitations(s: string): string {
+  let out = s.trim()
+  out = out.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
+  out = out.replace(/\s*\[\d+(?:\.\d+)*\]\([^)]*\)/g, '')
+  out = out.replace(/\s*\[\d+(?:[.,]\s*\d+)*\]/g, '')
+  return out.trim()
+}
+
+// 后端偶发把可解析 JSON 存进 raw；前端二次尝试解析以恢复结构化渲染
+function tryParseRaw(data?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!data || typeof data.raw !== 'string') return data
+  try {
+    const parsed = JSON.parse(stripFenceAndCitations(data.raw))
+    if (parsed && typeof parsed === 'object') return { ...parsed, raw: data.raw }
+  } catch {
+    // 保留原样，交由各组件 raw 分支降级显示
+  }
+  return data
+}
+
+// JSON 解析失败时的降级：等宽展示原文，避免 Markdown 把 JSON 里的符号解释掉
+function RawFallback({ text }: { text?: string }) {
+  if (!text) return <p className='text-sm text-gray-400'>暂无内容</p>
+  return (
+    <pre className='whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-500 font-mono'>{text}</pre>
+  )
+}
+
 function Markdown({ text }: { text?: string }) {
   if (!text) return <p className="text-sm text-gray-400">暂无内容</p>
   return (
@@ -337,11 +365,12 @@ export default function StorageReportPage() {
 
 // ── 结构化结果渲染 ──
 
-function ProsperityResult({ data }: { data?: Record<string, unknown> }) {
+function ProsperityResult({ data: rawData }: { data?: Record<string, unknown> }) {
+  const data = tryParseRaw(rawData)
   if (!data) return null
   if (data.error) return <p className="text-sm text-danger">{String(data.error)}</p>
   if (!('prosperity_score' in data) && data.raw) {
-    return <ResultCard><Markdown text={String(data.raw)} /></ResultCard>
+    return <ResultCard><RawFallback text={String(data.raw)} /></ResultCard>
   }
   const score = Number(data.prosperity_score ?? 0)
   const trend = String(data.trend ?? '')
@@ -382,12 +411,13 @@ function ProsperityResult({ data }: { data?: Record<string, unknown> }) {
   )
 }
 
-function PriceTrendResult({ data }: { data?: Record<string, unknown> }) {
+function PriceTrendResult({ data: rawData }: { data?: Record<string, unknown> }) {
+  const data = tryParseRaw(rawData)
   if (!data) return null
   if (data.error) return <p className="text-sm text-danger">{String(data.error)}</p>
   const cats = (data.categories as Array<Record<string, unknown>>) || []
   if (cats.length === 0 && data.raw) {
-    return <ResultCard><Markdown text={String(data.raw)} /></ResultCard>
+    return <ResultCard><RawFallback text={String(data.raw)} /></ResultCard>
   }
   return (
     <div className="space-y-4">
@@ -423,12 +453,13 @@ function PriceTrendResult({ data }: { data?: Record<string, unknown> }) {
   )
 }
 
-function AnomalyResult({ data }: { data?: Record<string, unknown> }) {
+function AnomalyResult({ data: rawData }: { data?: Record<string, unknown> }) {
+  const data = tryParseRaw(rawData)
   if (!data) return null
   if (data.error) return <p className="text-sm text-danger">{String(data.error)}</p>
   const anomalies = (data.anomalies as Array<Record<string, unknown>>) || []
   if (anomalies.length === 0 && data.raw) {
-    return <ResultCard><Markdown text={String(data.raw)} /></ResultCard>
+    return <ResultCard><RawFallback text={String(data.raw)} /></ResultCard>
   }
   return (
     <ResultCard>

@@ -36,7 +36,8 @@ DEFAULT_PROSPERITY_PROMPT = f"""{_ROLE}
   ],
   "key_risks": ["风险点1", "风险点2"]
 }}
-仅输出上述单一 JSON 对象，themes 只包含用户勾选的主题。"""
+仅输出上述单一 JSON 对象，themes 只包含用户勾选的主题。
+务必输出可被 json.loads 直接解析的严格 JSON：所有键值成对且引号闭合，禁止在 JSON 结构中夹带引用编号（如 [1]、[1.1.2]）或脚注，来源信息写进对应字段的文本值内。"""
 
 
 DEFAULT_PRICE_TREND_PROMPT = f"""{_ROLE}
@@ -57,7 +58,8 @@ DEFAULT_PRICE_TREND_PROMPT = f"""{_ROLE}
     }}
   ]
 }}
-仅输出上述单一 JSON 对象，categories 覆盖用户给定的所有品类。"""
+仅输出上述单一 JSON 对象，categories 覆盖用户给定的所有品类。
+无异常波动时 anomalies 必须返回空数组 []，禁止留空或写成空字符串。务必输出可被 json.loads 直接解析的严格 JSON：所有键值成对且引号闭合，禁止在 JSON 结构中夹带引用编号（如 [1]、[1.1.2]）或脚注，来源信息写进 narrative 文本内。"""
 
 
 DEFAULT_SUPPLY_DEMAND_PROMPT = f"""{_ROLE}
@@ -97,4 +99,5 @@ DEFAULT_ANOMALY_PROMPT = f"""{_ROLE}
   ],
   "summary": "100 字以内的异动总览"
 }}
-仅输出上述单一 JSON 对象；若无明显异动，anomalies 返回空数组并在 summary 说明。"""
+仅输出上述单一 JSON 对象；若无明显异动，anomalies 返回空数组并在 summary 说明。
+务必输出可被 json.loads 直接解析的严格 JSON：所有键值成对且引号闭合，禁止在 JSON 结构中夹带引用编号（如 [1]、[1.1.2]）或脚注，来源信息写进对应字段的文本值内。"""
