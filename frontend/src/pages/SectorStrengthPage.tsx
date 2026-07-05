@@ -90,13 +90,23 @@ export default function SectorStrengthPage() {
   const handleExport = async () => {
     if (!reportRef.current) return
     setExporting(true)
+    // 导出前记录当前展开状态，并临时展开所有行，使导出的报告包含全部展开图表
+    const prevExpanded = expanded
+    const allSymbols = filtered.map(s => s.symbol)
+    setExpanded(new Set(allSymbols))
     try {
+      // 等待 React 提交 DOM 且 ECharts 完成渲染（图表较多，留足渲染时间）
+      await new Promise<void>(resolve =>
+        requestAnimationFrame(() => setTimeout(resolve, 900))
+      )
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
       await exportNodeAsHtml(reportRef.current, {
         title: '板块强度雷达',
         filename: `板块强度雷达_${stamp}.html`,
       })
     } finally {
+      // 还原用户原本的展开状态
+      setExpanded(prevExpanded)
       setExporting(false)
     }
   }
