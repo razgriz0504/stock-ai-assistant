@@ -174,9 +174,10 @@ export default function SectorStrengthPage() {
                   const sectorName = SPDR_TO_SECTOR[s.symbol]
                   const clickable = !!sectorName
                   const isExpanded = expanded === s.symbol
-                  const zone = ZONE_META[s.logbias?.zone] || ZONE_META.unknown
+                  const zone = ZONE_META[s.logbias?.zone ?? 'unknown'] ?? ZONE_META.unknown ?? { label: '-', cls: 'bg-gray-50 text-gray-400' }
                   const goScreener = (e: MouseEvent) => {
                     e.stopPropagation()
+                    if (!sectorName) return
                     navigate(`/screener?sector=${encodeURIComponent(sectorName)}&autorun=1`)
                   }
                   return (
