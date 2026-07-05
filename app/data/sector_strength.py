@@ -157,10 +157,17 @@ def _classify_zone(v: Optional[float]) -> str:
     return "exit"             # 失速，离场
 
 
-def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 40) -> dict:
-    """计算对数均线偏离度（减法版）及其历史序列"""
+def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 130) -> dict:
+    """计算对数均线偏离度（减法版）及其历史序列
+
+    series_len 默认 130 个交易日（覆盖近 6 个月），前端据此截取 6/3/1 个月三段展示。
+    """
     closes = df["Close"].dropna()
-    if len(closes) < 5:
+    closes = closes[closes > 0]  # 防御异常脏数据：价格必须 > 0，否则 np.log 返回 -inf
+
+    # EMA 需要预热期消除初始值影响，20 日 EMA 至少需 2 倍样本（40 日）才能与通达信等软件对齐
+    warmup_period = span * 2
+    if len(closes) < warmup_period:
         return {"value": None, "zone": "unknown", "series": [], "dates": []}
 
     ln_close = np.log(closes)
@@ -278,7 +285,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
 
     # 批量下载
     etf_symbols = list(ALL_ETFS.keys())
-    histories = _batch_download(etf_symbols, period="3mo")
+    histories = _batch_download(etf_symbols, period="6mo")
 
     if not histories or BENCHMARK not in histories:
         logger.error("Failed to fetch benchmark (SPY) data")

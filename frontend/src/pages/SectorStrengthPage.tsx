@@ -36,6 +36,18 @@ interface SectorItem {
   logbias: { value: number | null; zone: string; series: number[]; dates: string[] }
 }
 
+// 取数组尾部 n 个元素（用于截取近 N 个交易日）
+function sliceTail<T>(arr: T[], n: number): T[] {
+  return arr.slice(Math.max(0, arr.length - n))
+}
+
+// 展开区三个时间窗口（交易日）：近6个月 / 近3个月 / 近1个月
+const LOGBIAS_WINDOWS: [string, number][] = [
+  ['近 6 个月', 126],
+  ['近 3 个月', 63],
+  ['近 1 个月', 21],
+]
+
 // LOGBIAS 状态区间 → 展示样式
 const ZONE_META: Record<string, { label: string; cls: string }> = {
   overheated: { label: '过热', cls: 'bg-red-100 text-red-700' },
@@ -232,11 +244,23 @@ export default function SectorStrengthPage() {
                     {isExpanded && (
                       <tr className="bg-cream-50 border-b border-cream-200">
                         <td colSpan={10} className="px-6 py-4">
-                          <LogbiasChart
-                            series={s.logbias?.series || []}
-                            dates={s.logbias?.dates || []}
-                            value={s.logbias?.value ?? null}
-                          />
+                          <div className="mb-3 text-xs text-gray-500">
+                            对数均线偏离度 · EMA20(ln Close)
+                            {s.logbias?.value != null && (
+                              <span className="ml-2">当前 <strong className="text-copper">{s.logbias.value.toFixed(2)}%</strong></span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            {LOGBIAS_WINDOWS.map(([label, n]) => (
+                              <LogbiasChart
+                                key={label}
+                                title={label}
+                                series={sliceTail(s.logbias?.series || [], n)}
+                                dates={sliceTail(s.logbias?.dates || [], n)}
+                                height={200}
+                              />
+                            ))}
+                          </div>
                         </td>
                       </tr>
                     )}

@@ -8,7 +8,9 @@ import { useEffect, useRef } from 'react'
 interface Props {
   series: number[]
   dates: string[]
-  value: number | null
+  value?: number | null
+  title?: string
+  height?: number
 }
 
 // 阈值虚线定义（减法版）
@@ -19,7 +21,7 @@ const THRESHOLDS = [
   { y: -5, color: '#e53935', label: '失速 -5' },
 ]
 
-export default function LogbiasChart({ series, dates, value }: Props) {
+export default function LogbiasChart({ series, dates, value, title, height = 220 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const echartsRef = useRef<unknown>(null)
 
@@ -37,7 +39,13 @@ export default function LogbiasChart({ series, dates, value }: Props) {
 
       const markLineData = THRESHOLDS.map(t => ({
         yAxis: t.y,
-        label: { formatter: t.label, position: 'start' as const, fontSize: 10, color: t.color },
+        label: {
+          formatter: t.label,
+          position: 'insideEndTop' as const,
+          fontSize: 10,
+          color: t.color,
+          padding: [0, 4, 2, 0],
+        },
         lineStyle: { color: t.color, type: 'dashed' as const, width: 1, opacity: 0.7 },
       }))
 
@@ -52,7 +60,7 @@ export default function LogbiasChart({ series, dates, value }: Props) {
             return `${dates[p.dataIndex]}<br/>偏离度: <strong>${p.value?.toFixed(2)}%</strong>`
           },
         },
-        grid: { left: 48, right: 20, top: 20, bottom: 30 },
+        grid: { left: 44, right: 20, top: 20, bottom: 30 },
         xAxis: {
           type: 'category',
           data: dates,
@@ -62,7 +70,12 @@ export default function LogbiasChart({ series, dates, value }: Props) {
         yAxis: {
           type: 'value',
           scale: true,
-          axisLabel: { fontSize: 10, color: '#9ca3af', formatter: '{value}%' },
+          splitNumber: 4,
+          axisLabel: {
+            fontSize: 10,
+            color: '#9ca3af',
+            formatter: (v: number) => `${Math.round(v)}%`,
+          },
           splitLine: { lineStyle: { color: '#f3f4f6' } },
         },
         series: [
@@ -101,16 +114,28 @@ export default function LogbiasChart({ series, dates, value }: Props) {
   }, [series, dates])
 
   if (!series.length) {
-    return <div className="py-8 text-center text-xs text-gray-400">暂无偏离度数据</div>
+    return (
+      <div>
+        {title && <div className="mb-1 text-xs font-medium text-gray-600">{title}</div>}
+        <div
+          className="flex items-center justify-center text-xs text-gray-400"
+          style={{ height }}
+        >
+          数据不足
+        </div>
+      </div>
+    )
   }
 
   return (
     <div>
-      <div className="flex items-center gap-4 mb-1 text-xs text-gray-500">
-        <span>当前偏离度: <strong className="text-copper">{value?.toFixed(2)}%</strong></span>
-        <span className="text-gray-400">对数均线偏离度 · EMA20(ln Close)</span>
+      <div className="flex items-center justify-between mb-1 text-xs">
+        {title && <span className="font-medium text-gray-600">{title}</span>}
+        {value != null && (
+          <span className="text-gray-500">当前 <strong className="text-copper">{value.toFixed(2)}%</strong></span>
+        )}
       </div>
-      <div ref={chartRef} style={{ width: '100%', height: 220 }} />
+      <div ref={chartRef} style={{ width: '100%', height }} />
     </div>
   )
 }
