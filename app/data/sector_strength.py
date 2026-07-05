@@ -168,7 +168,8 @@ def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 130) ->
     # EMA 需要预热期消除初始值影响，20 日 EMA 至少需 2 倍样本（40 日）才能与通达信等软件对齐
     warmup_period = span * 2
     if len(closes) < warmup_period:
-        return {"value": None, "zone": "unknown", "series": [], "dates": []}
+        return {"value": None, "zone": "unknown", "series": [], "dates": [],
+                "log_close": [], "ema": []}
 
     ln_close = np.log(closes)
     ema = ln_close.ewm(span=span, adjust=False).mean()
@@ -181,6 +182,9 @@ def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 130) ->
         "zone": _classify_zone(current),
         "series": [round(float(v), 2) for v in tail],
         "dates": [d.strftime("%m-%d") for d in tail.index],
+        # 上图用：对数值 ln(Close) 与其 EMA20 走势（保留3位小数以保持均线平滑度）
+        "log_close": [round(float(v), 3) for v in ln_close.tail(series_len)],
+        "ema": [round(float(v), 3) for v in ema.tail(series_len)],
     }
 
 
@@ -208,6 +212,44 @@ def _compute_rs(etf_closes: pd.Series, spy_closes: pd.Series) -> dict:
     rs["composite"] = round(composite / valid_weight, 2) if valid_weight > 0 else None
 
     return rs
+
+
+def _compute_rs_series(
+    etf_closes: pd.Series,
+    spy_closes: pd.Series,
+    sma_period: int = 21,
+    series_len: int = 130,
+) -> dict:
+    """计算 Mansfield 相对强弱线（RS Line）及其历史序列。
+
+    RP  = ETF_Close / SPY_Close          相对价格
+    RSM = (RP / SMA(RP, N) - 1) × 100    零轴上方=强于大盘，下方=弱于大盘
+
+    与乘离度同为短中期指标（N=21 约一个月），时间尺度与 EMA20 乘离度匹配。
+    """
+    aligned = pd.concat(
+        [etf_closes.dropna(), spy_closes.dropna()], axis=1, keys=["etf", "spy"]
+    ).dropna()
+    aligned = aligned[(aligned["etf"] > 0) & (aligned["spy"] > 0)]
+
+    if len(aligned) < sma_period + 5:
+        return {"value": None, "series": [], "dates": []}
+
+    rp = aligned["etf"] / aligned["spy"]
+    sma = rp.rolling(sma_period).mean()
+    rsm = ((rp / sma) - 1) * 100
+    rsm = rsm.dropna()
+
+    if rsm.empty:
+        return {"value": None, "series": [], "dates": []}
+
+    current = round(float(rsm.iloc[-1]), 2)
+    tail = rsm.tail(series_len)
+    return {
+        "value": current,
+        "series": [round(float(v), 2) for v in tail],
+        "dates": [d.strftime("%m-%d") for d in tail.index],
+    }
 
 
 # ─── 资金流向信号 ───
@@ -304,6 +346,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
 
         perf = _compute_performance(df)
         rs = _compute_rs(df["Close"], spy_closes)
+        rs_line = _compute_rs_series(df["Close"], spy_closes)
         flow = _compute_flow(df)
         logbias = _compute_logbias(df)
 
@@ -320,6 +363,7 @@ def fetch_enhanced_sector_data(use_cache: bool = True) -> dict:
             "chg_60d": perf["chg_60d"],
             "vol_ratio": perf["vol_ratio"],
             "rs": rs,
+            "rs_line": rs_line,
             "flow": flow,
             "logbias": logbias,
         })

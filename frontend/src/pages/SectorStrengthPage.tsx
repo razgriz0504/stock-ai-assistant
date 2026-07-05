@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { Card, Button, Badge } from '@/components/ui'
 import LogbiasChart from '@/components/charts/LogbiasChart'
+import LogPriceChart from '@/components/charts/LogPriceChart'
 
 // SPDR 板块 ETF → yfinance 中的 sector 名称
 const SPDR_TO_SECTOR: Record<string, string> = {
@@ -33,7 +34,8 @@ interface SectorItem {
   vol_ratio: number
   rs: { composite: number | null; rs_5d: number | null; rs_15d: number | null; rs_30d: number | null; rs_60d: number | null }
   flow: { direction: string; flow_5d: number | null; vol_surge: number | null; accumulation: number | null }
-  logbias: { value: number | null; zone: string; series: number[]; dates: string[] }
+  logbias: { value: number | null; zone: string; series: number[]; dates: string[]; log_close: number[]; ema: number[] }
+  rs_line: { value: number | null; series: number[]; dates: string[] }
 }
 
 // 取数组尾部 n 个元素（用于截取近 N 个交易日）
@@ -46,6 +48,11 @@ const LOGBIAS_WINDOWS: [string, number][] = [
   ['近 6 个月', 126],
   ['近 3 个月', 63],
   ['近 1 个月', 21],
+]
+
+// RS 相对强弱线阈值（零轴：强于/弱于大盘分界）
+const RS_THRESHOLDS = [
+  { y: 0, color: '#9ca3af', label: '大盘线 0' },
 ]
 
 // LOGBIAS 状态区间 → 展示样式
@@ -244,21 +251,47 @@ export default function SectorStrengthPage() {
                     {isExpanded && (
                       <tr className="bg-cream-50 border-b border-cream-200">
                         <td colSpan={10} className="px-6 py-4">
-                          <div className="mb-3 text-xs text-gray-500">
-                            对数均线偏离度 · EMA20(ln Close)
-                            {s.logbias?.value != null && (
-                              <span className="ml-2">当前 <strong className="text-copper">{s.logbias.value.toFixed(2)}%</strong></span>
-                            )}
+                          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500">
+                            <span className="font-medium text-gray-600">{s.symbol} {s.name}</span>
+                            <span>对数值 ln(Close) + EMA20</span>
+                            <span>
+                              乖离率
+                              {s.logbias?.value != null && (
+                                <span className="ml-1"><strong className="text-copper">{s.logbias.value.toFixed(2)}%</strong></span>
+                              )}
+                            </span>
+                            <span>
+                              RS 相对强弱 (vs SPY)
+                              {s.rs_line?.value != null && (
+                                <span className="ml-1"><strong style={{ color: '#16a34a' }}>{s.rs_line.value.toFixed(2)}%</strong></span>
+                              )}
+                            </span>
                           </div>
                           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             {LOGBIAS_WINDOWS.map(([label, n]) => (
-                              <LogbiasChart
-                                key={label}
-                                title={label}
-                                series={sliceTail(s.logbias?.series || [], n)}
-                                dates={sliceTail(s.logbias?.dates || [], n)}
-                                height={200}
-                              />
+                              <div key={label} className="space-y-3">
+                                <LogPriceChart
+                                  title={`对数值及EMA20 · ${label}`}
+                                  logClose={sliceTail(s.logbias?.log_close || [], n)}
+                                  ema={sliceTail(s.logbias?.ema || [], n)}
+                                  dates={sliceTail(s.logbias?.dates || [], n)}
+                                  height={180}
+                                />
+                                <LogbiasChart
+                                  title={`乖离率 · ${label}`}
+                                  series={sliceTail(s.logbias?.series || [], n)}
+                                  dates={sliceTail(s.logbias?.dates || [], n)}
+                                  height={160}
+                                />
+                                <LogbiasChart
+                                  title={`RS 强弱 · ${label}`}
+                                  series={sliceTail(s.rs_line?.series || [], n)}
+                                  dates={sliceTail(s.rs_line?.dates || [], n)}
+                                  height={160}
+                                  color="#16a34a"
+                                  thresholds={RS_THRESHOLDS}
+                                />
+                              </div>
                             ))}
                           </div>
                         </td>
