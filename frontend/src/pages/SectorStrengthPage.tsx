@@ -246,7 +246,12 @@ export default function SectorStrengthPage() {
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">15日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">30日</th>
                   <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">RS</th>
-                  <th className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">量比</th>
+                  <th
+                    className="text-right px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500 cursor-help"
+                    title="量比 = 近期成交量 / 过去一段时间的平均成交量。≥1 表示放量（资金活跃），<1 表示缩量。量比越大，说明当前成交越活跃，配合价格上涨更具意义。"
+                  >
+                    量比 <span className="text-gray-400">?</span>
+                  </th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">偏离度</th>
                   <th className="text-center px-4 py-3 font-mono text-[10px] tracking-wider uppercase text-gray-500">资金流向</th>
                 </tr>
