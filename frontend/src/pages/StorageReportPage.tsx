@@ -103,7 +103,8 @@ export default function StorageReportPage() {
     if (meta) {
       if (themes.length === 0) setThemes(Object.keys(meta.themes))
       if (vendors.length === 0) setVendors(Object.keys(meta.vendors))
-      if (!metricKey && meta.metrics.length > 0) setMetricKey(meta.metrics[0].key)
+      const firstMetric = meta.metrics[0]
+      if (!metricKey && firstMetric) setMetricKey(firstMetric.key)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meta])
