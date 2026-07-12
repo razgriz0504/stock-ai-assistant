@@ -1,7 +1,7 @@
 """板块强度雷达 - A 股实现
 
 结构完全对齐美股 (sector_strength.py):
-- 数据源: akshare (fund_etf_hist_em)
+- 数据源: akshare fund_etf_hist_sina (新浪源, 东财 SSL 不可用)
 - 基准: 沪深 300 ETF (510300)
 - 宇宙: 12 只一级行业 ETF + 20 只主题 ETF = 32 只
 - 核心计算函数复用 sector_strength_common (RS/logbias/flow/rs_line)
@@ -59,38 +59,47 @@ _cache_cn: dict = {"data": None, "ts": 0.0}
 _CACHE_TTL = 300  # 5 分钟
 
 
-# ─── akshare 单只 ETF 拉取 ───
+# ─── akshare 单只 ETF 拉取 (新浪源) ───
 
-def _fetch_one_etf_cn(symbol: str, start_date: str, end_date: str) -> tuple[str, pd.DataFrame | None]:
-    """使用 akshare 拉取单只 ETF 的日线，返回与 yfinance 相同格式的 DataFrame。
 
-    akshare fund_etf_hist_em 返回列（中文）:
-        日期 / 开盘 / 收盘 / 最高 / 最低 / 成交量 / 成交额 / 振幅 / 涨跌幅 / 涨跌额 / 换手率
+def _etf_code_to_sina_symbol(code: str) -> str:
+    """ETF 6 位代码转 fund_etf_hist_sina 所需的 sh/sz 前缀。
 
-    转成标准列 [Open, High, Low, Close, Volume] + DatetimeIndex。
+    规则: 51xxxx/56xxxx → sh, 15xxxx → sz
+    """
+    if code.startswith(("51", "56")):
+        return f"sh{code}"
+    return f"sz{code}"
+
+
+def _fetch_one_etf_cn(symbol: str, lookback_days: int) -> tuple[str, pd.DataFrame | None]:
+    """使用 akshare fund_etf_hist_sina 拉取单只 ETF 全部日线 (新浪源)。
+
+    返回与 yfinance 相同格式的 DataFrame: [Open, High, Low, Close, Volume] + DatetimeIndex。
+    按 lookback_days 截取所需日期范围。
     """
     try:
         import akshare as ak
-        raw = ak.fund_etf_hist_em(
-            symbol=symbol,
-            period="daily",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="qfq",  # 前复权
-        )
+        sina_sym = _etf_code_to_sina_symbol(symbol)
+        raw = ak.fund_etf_hist_sina(symbol=sina_sym)
         if raw is None or raw.empty:
             return symbol, None
 
         df = pd.DataFrame({
-            "Open": pd.to_numeric(raw["开盘"], errors="coerce"),
-            "High": pd.to_numeric(raw["最高"], errors="coerce"),
-            "Low": pd.to_numeric(raw["最低"], errors="coerce"),
-            "Close": pd.to_numeric(raw["收盘"], errors="coerce"),
-            "Volume": pd.to_numeric(raw["成交量"], errors="coerce"),
+            "Open": pd.to_numeric(raw["open"], errors="coerce"),
+            "High": pd.to_numeric(raw["high"], errors="coerce"),
+            "Low": pd.to_numeric(raw["low"], errors="coerce"),
+            "Close": pd.to_numeric(raw["close"], errors="coerce"),
+            "Volume": pd.to_numeric(raw["volume"], errors="coerce"),
         })
-        df.index = pd.to_datetime(raw["日期"])
+        df.index = pd.to_datetime(raw["date"])
         df = df.dropna(subset=["Close"])
         df = df[df["Close"] > 0]
+
+        # 截取 lookback_days 日期范围
+        cutoff = datetime.now() - timedelta(days=lookback_days)
+        df = df[df.index >= pd.Timestamp(cutoff)]
+
         if len(df) < 5:
             return symbol, None
         return symbol, df
@@ -100,7 +109,7 @@ def _fetch_one_etf_cn(symbol: str, start_date: str, end_date: str) -> tuple[str,
 
 
 def _batch_download_cn(symbols: list[str], lookback_days: int = 260) -> dict[str, pd.DataFrame]:
-    """并行拉取 A 股 ETF 日线（akshare 无批量接口，用线程池并发）。
+    """并行拉取 A 股 ETF 日线 (fund_etf_hist_sina, 新浪源)。
 
     lookback_days=260 覆盖约 12 个自然月 ≈ 240 交易日，供 60 日收益率与 130 日 logbias 序列使用。
     """
@@ -108,18 +117,12 @@ def _batch_download_cn(symbols: list[str], lookback_days: int = 260) -> dict[str
     if BENCHMARK_CN not in all_symbols:
         all_symbols.append(BENCHMARK_CN)
 
-    end = datetime.now()
-    start = end - timedelta(days=lookback_days)
-    start_str = start.strftime("%Y%m%d")
-    end_str = end.strftime("%Y%m%d")
-
-    logger.info(f"CN batch downloading {len(all_symbols)} ETFs "
-                f"({start_str}~{end_str}) via akshare...")
+    logger.info(f"CN batch downloading {len(all_symbols)} ETFs via akshare (sina source)...")
 
     result: dict[str, pd.DataFrame] = {}
     with ThreadPoolExecutor(max_workers=8) as pool:
         futures = [
-            pool.submit(_fetch_one_etf_cn, sym, start_str, end_str)
+            pool.submit(_fetch_one_etf_cn, sym, lookback_days)
             for sym in all_symbols
         ]
         for fut in as_completed(futures):
