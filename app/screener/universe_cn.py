@@ -32,13 +32,13 @@ def _fetch_index_cons(index_code: str) -> tuple[list[str], dict[str, str]]:
             logger.warning(f"index_stock_cons_csindex({index_code}) returned empty")
             return [], {}
 
-        # 兼容不同版本列名
+        # 兼容不同版本列名 — 精确匹配 "成分券" 开头的列
         code_col = None
         name_col = None
         for c in df.columns:
-            if "代码" in c and "指数" not in c:
+            if "成分" in c and "代码" in c:
                 code_col = c
-            elif "名称" in c and "指数" not in c:
+            elif "成分" in c and "名称" in c and "英文" not in c:
                 name_col = c
         if not code_col:
             logger.warning(f"cannot find code column in {df.columns.tolist()}")
@@ -49,8 +49,9 @@ def _fetch_index_cons(index_code: str) -> tuple[list[str], dict[str, str]]:
         for _, row in df.iterrows():
             code = str(row[code_col]).strip().zfill(6)
             name = str(row[name_col]).strip() if name_col else ""
-            # 过滤 ST/*ST/退
-            if "ST" in name.upper() or "退" in name:
+            # 过滤 ST/*ST/退 (前缀匹配, 避免误杀)
+            name_upper = name.upper()
+            if name_upper.startswith("ST") or name_upper.startswith("*ST") or "退" in name:
                 continue
             if len(code) == 6 and code.isdigit():
                 codes.append(code)
