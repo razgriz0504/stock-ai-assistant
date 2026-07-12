@@ -290,6 +290,11 @@ async def _execute_screener(
         total = len(symbols_to_scan)
         filter_fail_counts: dict[str, int] = {}  # Track which filter rejects most stocks
 
+        # Pre-load CN stock names from index constituents (fast, no network dependency)
+        cn_names: dict[str, str] = {}
+        if market == "cn":
+            cn_names = get_universe_cn_names()
+
         # Pre-compute RS percentile if SEPA RS filter is enabled
         rs_snapshot: dict[str, float] = {}
         technical_config = filters_config.get("technical", {})
@@ -372,7 +377,10 @@ async def _execute_screener(
                 indicators_snapshot = _extract_indicators_snapshot(df, info) if not df.empty else {}
 
                 # Add name and sector to snapshot for display
-                indicators_snapshot["_name"] = info.get("short_name", "")
+                if market == "cn":
+                    indicators_snapshot["_name"] = cn_names.get(sym, "")
+                else:
+                    indicators_snapshot["_name"] = info.get("short_name", "")
                 indicators_snapshot["_sector"] = info.get("sector", "")
                 indicators_snapshot["_industry"] = info.get("industry", "")
 
@@ -410,30 +418,39 @@ async def _execute_screener(
         if not has_fundamental_filters:
             passed_symbols = [r.symbol for r in results if r.passed]
             if passed_symbols:
-                logger.info(f"Fetching fundamentals for {len(passed_symbols)} passed stocks...")
-                extra_fundamentals = await asyncio.to_thread(
-                    provider.get_batch_fundamentals, passed_symbols, 10
-                )
-                # Update indicators_json with name/sector
-                for r in results:
-                    if r.passed and r.symbol in extra_fundamentals:
-                        info = extra_fundamentals[r.symbol]
-                        snapshot = json.loads(r.indicators_json) if r.indicators_json else {}
-                        snapshot["_name"] = info.get("short_name", "")
-                        snapshot["_sector"] = info.get("sector", "")
-                        snapshot["_industry"] = info.get("industry", "")
-                        r.indicators_json = json.dumps(snapshot, cls=_NumpyEncoder)
-                        # Also fill in fundamental fields
-                        if not r.market_cap:
-                            r.market_cap = info.get("market_cap")
-                        if not r.pe_ratio:
-                            r.pe_ratio = info.get("pe_ratio")
-                        if not r.revenue_growth:
-                            r.revenue_growth = info.get("revenue_growth")
-                        if not r.roe:
-                            r.roe = info.get("roe")
-                        if not r.dividend_yield:
-                            r.dividend_yield = info.get("dividend_yield")
+                # For CN market, use pre-cached names from index constituents (fast & reliable)
+                if market == "cn":
+                    cn_names = get_universe_cn_names()
+                    for r in results:
+                        if r.passed:
+                            snapshot = json.loads(r.indicators_json) if r.indicators_json else {}
+                            snapshot["_name"] = cn_names.get(r.symbol, "")
+                            r.indicators_json = json.dumps(snapshot, cls=_NumpyEncoder)
+                else:
+                    logger.info(f"Fetching fundamentals for {len(passed_symbols)} passed stocks...")
+                    extra_fundamentals = await asyncio.to_thread(
+                        provider.get_batch_fundamentals, passed_symbols, 10
+                    )
+                    # Update indicators_json with name/sector
+                    for r in results:
+                        if r.passed and r.symbol in extra_fundamentals:
+                            info = extra_fundamentals[r.symbol]
+                            snapshot = json.loads(r.indicators_json) if r.indicators_json else {}
+                            snapshot["_name"] = info.get("short_name", "")
+                            snapshot["_sector"] = info.get("sector", "")
+                            snapshot["_industry"] = info.get("industry", "")
+                            r.indicators_json = json.dumps(snapshot, cls=_NumpyEncoder)
+                            # Also fill in fundamental fields
+                            if not r.market_cap:
+                                r.market_cap = info.get("market_cap")
+                            if not r.pe_ratio:
+                                r.pe_ratio = info.get("pe_ratio")
+                            if not r.revenue_growth:
+                                r.revenue_growth = info.get("revenue_growth")
+                            if not r.roe:
+                                r.roe = info.get("roe")
+                            if not r.dividend_yield:
+                                r.dividend_yield = info.get("dividend_yield")
 
         # Step 7: Persist results
         if filter_fail_counts:
