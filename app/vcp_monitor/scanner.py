@@ -334,7 +334,7 @@ def _passes_sepa(df: pd.DataFrame, info: dict) -> bool:
     default_params = [
         (filter_sepa_ma_position, {}),
         (filter_sepa_sma200_trend, {"lookback_days": 22}),
-        (filter_sepa_52w_low, {"min_pct": 25}),
+        (filter_sepa_52w_low, {"min_pct": 30}),
         (filter_sepa_52w_high, {"max_pct": 25}),
         (filter_sepa_rs_rating, {"min_rs": 70}),
     ]

@@ -370,7 +370,7 @@ function RunTab({ onViewResults }: { onViewResults: () => void }) {
                 const sepaState: Record<string, Record<string, unknown>> = {
                   sepa_ma_position: { enabled: true },
                   sepa_sma200_trend: { enabled: true, lookback_days: 22 },
-                  sepa_52w_low: { enabled: true, min_pct: 25 },
+                  sepa_52w_low: { enabled: true, min_pct: 30 },
                   sepa_52w_high: { enabled: true, max_pct: 25 },
                   sepa_rs_rating: { enabled: true, min_rs: 70 },
                 }
