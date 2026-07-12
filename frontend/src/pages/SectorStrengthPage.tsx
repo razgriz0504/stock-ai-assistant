@@ -69,6 +69,92 @@ const ZONE_META: Record<string, { label: string; cls: string }> = {
 type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio' | 'logbias'
 type Market = 'us' | 'cn'
 
+interface Holding {
+  symbol: string
+  name: string
+  weight: number
+}
+
+interface HoldingsResp {
+  symbol: string
+  market: Market
+  holdings: Holding[]
+  as_of?: string
+  source?: string
+  error?: string
+}
+
+// ETF 前十大持仓（展开行时懒加载）
+function EtfHoldings({ market, symbol }: { market: Market; symbol: string }) {
+  const { data, isLoading, isError } = useQuery<HoldingsResp>({
+    queryKey: ['etf-holdings', market, symbol],
+    queryFn: async () => {
+      const res = await api.get(
+        `/api/sector-strength/holdings?market=${market}&symbol=${encodeURIComponent(symbol)}`,
+      )
+      return res.data
+    },
+    staleTime: 24 * 60 * 60 * 1000,
+    retry: 1,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="mt-4 flex items-center gap-2 text-xs text-gray-500">
+        <span className="w-3 h-3 border-2 border-cream-300 border-t-copper rounded-full animate-spin" />
+        加载持仓中…
+      </div>
+    )
+  }
+  if (isError || !data) {
+    return <div className="mt-4 text-xs text-gray-400">持仓数据拉取失败</div>
+  }
+  if (data.error || !data.holdings || data.holdings.length === 0) {
+    return (
+      <div className="mt-4 text-xs text-gray-400">
+        无可用持仓数据{data.error ? `（${data.error}）` : ''}
+      </div>
+    )
+  }
+
+  const totalWeight = data.holdings.reduce((sum, h) => sum + (h.weight || 0), 0)
+
+  return (
+    <div className="mt-5">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+        <span className="font-medium text-gray-700">前十大持仓</span>
+        <span>合计占比 <strong className="text-copper">{totalWeight.toFixed(2)}%</strong></span>
+        {data.as_of && <span>披露期 {data.as_of}</span>}
+        <span className="text-gray-400">数据源 {data.source || '-'}</span>
+      </div>
+      <div className="overflow-x-auto border border-cream-300 rounded-md">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="bg-cream-100 border-b border-cream-300">
+              <th className="text-left px-3 py-2 font-mono text-[10px] tracking-wider uppercase text-gray-500">#</th>
+              <th className="text-left px-3 py-2 font-mono text-[10px] tracking-wider uppercase text-gray-500">代码</th>
+              <th className="text-left px-3 py-2 font-mono text-[10px] tracking-wider uppercase text-gray-500">名称</th>
+              <th className="text-right px-3 py-2 font-mono text-[10px] tracking-wider uppercase text-gray-500">权重</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.holdings.map((h, i) => (
+              <tr key={h.symbol + i} className="border-b border-cream-200 last:border-0 hover:bg-cream-50">
+                <td className="px-3 py-1.5 text-gray-400">{i + 1}</td>
+                <td className="px-3 py-1.5 font-mono font-semibold">{h.symbol}</td>
+                <td className="px-3 py-1.5 text-gray-700">{h.name || '-'}</td>
+                <td className="px-3 py-1.5 text-right font-mono font-medium">
+                  {h.weight?.toFixed(2)}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 export default function SectorStrengthPage() {
   const navigate = useNavigate()
   const reportRef = useRef<HTMLDivElement>(null)
@@ -403,6 +489,7 @@ export default function SectorStrengthPage() {
                               </div>
                             ))}
                           </div>
+                          <EtfHoldings market={market} symbol={s.symbol} />
                         </td>
                       </tr>
                     )}
