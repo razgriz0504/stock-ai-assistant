@@ -162,7 +162,7 @@ export default function SectorStrengthPage() {
   const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [showRsHelp, setShowRsHelp] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   // 市场相关词汇/符号
@@ -285,8 +285,8 @@ export default function SectorStrengthPage() {
             </button>
           </div>
           {updatedAt && <span className="text-xs text-gray-500 font-mono">{updatedAt}</span>}
-          <Button size="sm" variant="ghost" onClick={() => setShowRsHelp(v => !v)}>
-            {showRsHelp ? '收起 RS 说明' : 'RS 说明'}
+          <Button size="sm" variant="ghost" onClick={() => setShowHelp(v => !v)}>
+            {showHelp ? '收起指标说明' : '指标说明'}
           </Button>
           <Button size="sm" variant="secondary" onClick={handleExport} disabled={exporting || isLoading}>
             {exporting ? '导出中...' : '导出'}
@@ -297,20 +297,50 @@ export default function SectorStrengthPage() {
         </div>
       </div>
 
-      {/* RS 说明 */}
-      {showRsHelp && (
+     {/* 指标说明 */}
+      {showHelp && (
         <Card className="mb-4 p-4 bg-cream-50 border-cream-300">
-          <div className="text-sm text-gray-700 space-y-2 leading-relaxed">
-            <div className="font-semibold text-gray-900">RS 相对强弱（Relative Strength）</div>
-            <p>
-              RS 衡量一个板块相对于大盘（基准：{benchmarkLabel}）的表现强弱，而非绝对涨跌。
-              即使板块下跌，只要跌得比大盘少，RS 依然可能为正（强于大盘）。
-            </p>
-            <ul className="list-disc pl-5 space-y-1 text-gray-600">
-              <li><strong className="text-gray-800">RS 评分（composite）</strong>：综合 5/15/30/60 日多周期相对表现的加权评分，数值越高代表越强，用于默认排序。</li>
-              <li><strong className="text-gray-800">RS 强弱线（vs {benchmarkLabel}）</strong>：展开行中的曲线，以零轴为界——在零轴上方表示近期跑赢大盘，下方表示跑输。</li>
-              <li><strong className="text-gray-800">应用</strong>：优先关注 RS 持续走强、刚从零轴下方上穿的板块（轮动拐点），避开 RS 持续走弱的板块。</li>
-            </ul>
+          <div className="text-sm text-gray-700 space-y-4 leading-relaxed">
+            {/* RS */}
+            <div>
+              <div className="font-semibold text-gray-900 mb-1">RS 相对强弱（Relative Strength）</div>
+              <p>
+                RS 衡量一个板块相对于大盘（基准：{benchmarkLabel}）的表现强弱，而非绝对涨跌。
+                即使板块下跌，只要跌得比大盘少，RS 依然可能为正（强于大盘）。
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-gray-600 mt-1">
+                <li><strong className="text-gray-800">RS 评分（composite）</strong>：综合 5/15/30/60 日多周期相对表现的加权评分，数值越高代表越强，用于默认排序。</li>
+                <li><strong className="text-gray-800">RS 强弱线（vs {benchmarkLabel}）</strong>：展开行中的曲线，以零轴为界——在零轴上方表示近期跑赢大盘，下方表示跑输。</li>
+                <li><strong className="text-gray-800">应用</strong>：优先关注 RS 持续走强、刚从零轴下方上穿的板块（轮动拐点），避开 RS 持续走弱的板块。</li>
+              </ul>
+            </div>
+            {/* 量比 */}
+            <div>
+              <div className="font-semibold text-gray-900 mb-1">量比（Volume Ratio）</div>
+              <p>
+                量比 = 近 5 日平均成交量 ÷ 近 20 日平均成交量。反映当前交投活跃程度相对于近期常态的放大倍数。
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-gray-600 mt-1">
+                <li><strong className="text-gray-800">&gt; 1.2</strong>：明显放量，资金关注度提升——配合上涨为加速信号，配合下跌为恐慌出逃。</li>
+                <li><strong className="text-gray-800">0.8 ~ 1.2</strong>：量能正常，趋势延续为主。</li>
+                <li><strong className="text-gray-800">&lt; 0.8</strong>：缩量，关注度下降——上升趋势中缩量回踩通常健康，下降趋势中缩量可能是阴跌。</li>
+              </ul>
+            </div>
+            {/* 资金流向 */}
+            <div>
+              <div className="font-semibold text-gray-900 mb-1">资金流向（Flow Proxy）</div>
+              <p>
+                非 Level 2 实际资金流，而是基于日线量价推算的代理指标，包含三个维度：
+              </p>
+              <ul className="list-disc pl-5 space-y-1 text-gray-600 mt-1">
+                <li><strong className="text-gray-800">flow_5d（5日净流向）</strong>：Σ(日涨跌幅 × 成交量) ÷ 20日均成交额。正值越大 = 量价齐升越明显。</li>
+                <li><strong className="text-gray-800">accumulation（吸筹度 0~1）</strong>：近 10 日中"上涨且放量"的天数占比。≥ 0.5 表示多数上涨日有量配合，吸筹迹象明确。</li>
+                <li><strong className="text-gray-800">direction 判定规则</strong>：flow_5d &gt; 0.05 且量比 &gt; 1.2 → 流入；flow_5d &lt; -0.05 且量比 &gt; 1.2 → 流出；其余 → 中性。</li>
+              </ul>
+              <p className="text-gray-500 mt-1 text-xs">
+                局限：ETF 成交量混合了申购/赎回与二级市场交易，大方向有参考价值，不适合精细判断。
+              </p>
+            </div>
           </div>
         </Card>
       )}
