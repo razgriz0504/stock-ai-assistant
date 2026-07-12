@@ -122,12 +122,26 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
       let filters = {}
       try { filters = JSON.parse(filtersJson) } catch { /* use empty */ }
 
-      const res = await api.post('/api/screener/run', {
+      const payload = {
         filters,
         custom_code: customCode || '',
         preset_id: activePresetId || null,
         market,
-      })
+      }
+
+      let res
+      try {
+        res = await api.post('/api/screener/run', payload)
+      } catch (e: unknown) {
+        // 409 = lock stuck from a previous crashed run → auto reset & retry once
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 409) {
+          await api.post('/api/screener/reset-lock')
+          res = await api.post('/api/screener/run', payload)
+        } else {
+          throw e
+        }
+      }
       set({ status: 'running', runId: res.data.run_id })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to start'

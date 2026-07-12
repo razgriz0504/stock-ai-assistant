@@ -84,6 +84,17 @@ async def start_screener(req: RunRequest, background_tasks: BackgroundTasks):
         db.close()
 
 
+@router.post("/api/screener/reset-lock")
+async def reset_lock():
+    """Force-release the screener running lock (use when stuck at 409)."""
+    from app.screener.engine import _running_lock
+    if _running_lock.locked():
+        _running_lock.release()
+        logger.warning("Screener lock force-released")
+        return {"released": True}
+    return {"released": False, "message": "Lock was not held"}
+
+
 @router.get("/api/screener/status/{run_id}")
 async def get_status(run_id: int):
     """Get screener run status and progress."""
