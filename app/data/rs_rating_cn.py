@@ -27,23 +27,29 @@ _RS_CACHE_TTL = 86400  # 24 hours
 
 
 def _fetch_close_history(symbol: str, start_date: str, end_date: str) -> Optional[pd.Series]:
-    """拉单只收盘价 (前复权). 返回 Series(index=Date, name=symbol)."""
+    """拉单只收盘价 (前复权). 返回 Series(index=Date, name=symbol).
+
+    数据源: akshare stock_zh_a_daily (网易163), 比 stock_zh_a_hist (东财) 更稳定.
+    """
     try:
         import akshare as ak
         code = symbol.zfill(6)
-        raw = ak.stock_zh_a_hist(
-            symbol=code,
-            period="daily",
-            start_date=start_date,
-            end_date=end_date,
-            adjust="qfq",
-        )
+        # sh/sz 前缀
+        prefix = "sh" if code.startswith("6") else "sz"
+        sym_163 = f"{prefix}{code}"
+
+        raw = ak.stock_zh_a_daily(symbol=sym_163, adjust="qfq")
         if raw is None or raw.empty:
             return None
-        s = pd.to_numeric(raw["收盘"], errors="coerce")
-        s.index = pd.to_datetime(raw["日期"])
+
+        s = pd.to_numeric(raw["close"], errors="coerce")
+        s.index = pd.to_datetime(raw["date"])
         s = s.dropna()
         s = s[s > 0]
+
+        # 截取日期范围
+        s = s[(s.index >= pd.Timestamp(start_date)) & (s.index <= pd.Timestamp(end_date))]
+
         if len(s) < 100:
             return None
         s.name = code

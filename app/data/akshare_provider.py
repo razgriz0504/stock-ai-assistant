@@ -35,6 +35,17 @@ _PERIOD_DAYS = {
     "5y": 1830,
 }
 
+
+def _code_to_163_symbol(code: str) -> str:
+    """6位代码转 stock_zh_a_daily 所需的 sh/sz 前缀格式.
+
+    规则: 6开头→sh, 0/3开头→sz, 其他→sz
+    """
+    code = code.zfill(6)
+    if code.startswith("6"):
+        return f"sh{code}"
+    return f"sz{code}"
+
 # Fundamental cache: 24h
 _fundamental_cache: dict[str, dict] = {}
 _FUNDAMENTAL_CACHE_TTL = 86400
@@ -111,31 +122,34 @@ class AkshareProvider(DataProvider):
             return None
 
     def get_history(self, symbol: str, period: str = "1y") -> pd.DataFrame:
-        """日线 OHLCV, 前复权. 列名对齐 yfinance: [Open, High, Low, Close, Volume] + DatetimeIndex."""
+        """日线 OHLCV, 前复权. 列名对齐 yfinance: [Open, High, Low, Close, Volume] + DatetimeIndex.
+
+        数据源: akshare stock_zh_a_daily (网易163), 比 stock_zh_a_hist (东财) 更稳定.
+        """
         try:
             import akshare as ak
-            start, end = _period_to_dates(period)
-            code = symbol.zfill(6)
-            raw = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=start,
-                end_date=end,
-                adjust="qfq",  # 前复权 (SEPA 长期均线必需)
-            )
+            sym_163 = _code_to_163_symbol(symbol)
+            raw = ak.stock_zh_a_daily(symbol=sym_163, adjust="qfq")
             if raw is None or raw.empty:
                 return pd.DataFrame()
 
+            # 列名: date, open, high, low, close, volume, ...
             df = pd.DataFrame({
-                "Open": pd.to_numeric(raw["开盘"], errors="coerce"),
-                "High": pd.to_numeric(raw["最高"], errors="coerce"),
-                "Low": pd.to_numeric(raw["最低"], errors="coerce"),
-                "Close": pd.to_numeric(raw["收盘"], errors="coerce"),
-                "Volume": pd.to_numeric(raw["成交量"], errors="coerce"),
+                "Open": pd.to_numeric(raw["open"], errors="coerce"),
+                "High": pd.to_numeric(raw["high"], errors="coerce"),
+                "Low": pd.to_numeric(raw["low"], errors="coerce"),
+                "Close": pd.to_numeric(raw["close"], errors="coerce"),
+                "Volume": pd.to_numeric(raw["volume"], errors="coerce"),
             })
-            df.index = pd.to_datetime(raw["日期"])
+            df.index = pd.to_datetime(raw["date"])
             df = df.dropna(subset=["Close"])
             df = df[df["Close"] > 0]
+
+            # 按 period 截取日期范围
+            days = _PERIOD_DAYS.get(period, 365)
+            cutoff = datetime.now() - timedelta(days=days)
+            df = df[df.index >= pd.Timestamp(cutoff)]
+
             return df
         except Exception as e:
             logger.debug(f"akshare history error for {symbol}: {e}")
