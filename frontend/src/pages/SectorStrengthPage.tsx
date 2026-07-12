@@ -67,15 +67,29 @@ const ZONE_META: Record<string, { label: string; cls: string }> = {
 }
 
 type SortKey = 'rs_composite' | 'chg_5d' | 'chg_15d' | 'chg_30d' | 'vol_ratio' | 'logbias'
+type Market = 'us' | 'cn'
 
 export default function SectorStrengthPage() {
   const navigate = useNavigate()
   const reportRef = useRef<HTMLDivElement>(null)
+  const [market, setMarket] = useState<Market>('us')
   const [sortBy, setSortBy] = useState<SortKey>('rs_composite')
   const [filterCat, setFilterCat] = useState<string>('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [showRsHelp, setShowRsHelp] = useState(false)
   const [exporting, setExporting] = useState(false)
+
+  // 市场相关词汇/符号
+  const benchmarkLabel = market === 'cn' ? '沪深300' : 'SPY'
+  const currencySymbol = market === 'cn' ? '¥' : '$'
+
+  // 切换市场时重置展开行与分类过滤（防止新市场不包含旧 symbol/分类导致 UI 错位）
+  const switchMarket = (m: Market) => {
+    if (m === market) return
+    setMarket(m)
+    setExpanded(new Set())
+    setFilterCat('')
+  }
 
   // 允许多行同时展开：切换某一行时不影响其它已展开行
   const toggleExpand = (symbol: string) => {
@@ -112,9 +126,9 @@ export default function SectorStrengthPage() {
   }
 
   const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ['sector-strength'],
+    queryKey: ['sector-strength', market],
     queryFn: async () => {
-      const res = await api.get('/api/sector-strength/data')
+      const res = await api.get(`/api/sector-strength/data?market=${market}`)
       return res.data
     },
     staleTime: 60_000,
@@ -161,6 +175,29 @@ export default function SectorStrengthPage() {
           <h1 className="page-title">板块强度<span className="text-copper">雷达</span></h1>
         </div>
         <div className="flex items-center gap-3">
+          {/* 市场 Tab 切换 */}
+          <div className="inline-flex rounded-md border border-cream-300 overflow-hidden">
+            <button
+              onClick={() => switchMarket('us')}
+              className={`px-3 py-1.5 text-xs font-mono transition-colors ${
+                market === 'us'
+                  ? 'bg-copper text-white'
+                  : 'bg-white text-gray-600 hover:bg-cream-50'
+              }`}
+            >
+              美股
+            </button>
+            <button
+              onClick={() => switchMarket('cn')}
+              className={`px-3 py-1.5 text-xs font-mono transition-colors border-l border-cream-300 ${
+                market === 'cn'
+                  ? 'bg-copper text-white'
+                  : 'bg-white text-gray-600 hover:bg-cream-50'
+              }`}
+            >
+              A 股
+            </button>
+          </div>
           {updatedAt && <span className="text-xs text-gray-500 font-mono">{updatedAt}</span>}
           <Button size="sm" variant="ghost" onClick={() => setShowRsHelp(v => !v)}>
             {showRsHelp ? '收起 RS 说明' : 'RS 说明'}
@@ -180,12 +217,12 @@ export default function SectorStrengthPage() {
           <div className="text-sm text-gray-700 space-y-2 leading-relaxed">
             <div className="font-semibold text-gray-900">RS 相对强弱（Relative Strength）</div>
             <p>
-              RS 衡量一个板块相对于大盘（基准：SPY）的表现强弱，而非绝对涨跌。
+              RS 衡量一个板块相对于大盘（基准：{benchmarkLabel}）的表现强弱，而非绝对涨跌。
               即使板块下跌，只要跌得比大盘少，RS 依然可能为正（强于大盘）。
             </p>
             <ul className="list-disc pl-5 space-y-1 text-gray-600">
               <li><strong className="text-gray-800">RS 评分（composite）</strong>：综合 5/15/30/60 日多周期相对表现的加权评分，数值越高代表越强，用于默认排序。</li>
-              <li><strong className="text-gray-800">RS 强弱线（vs SPY）</strong>：展开行中的曲线，以零轴为界——在零轴上方表示近期跑赢大盘，下方表示跑输。</li>
+              <li><strong className="text-gray-800">RS 强弱线（vs {benchmarkLabel}）</strong>：展开行中的曲线，以零轴为界——在零轴上方表示近期跑赢大盘，下方表示跑输。</li>
               <li><strong className="text-gray-800">应用</strong>：优先关注 RS 持续走强、刚从零轴下方上穿的板块（轮动拐点），避开 RS 持续走弱的板块。</li>
             </ul>
           </div>
@@ -259,7 +296,8 @@ export default function SectorStrengthPage() {
               <tbody>
                 {filtered.map((s, i) => {
                   const sectorName = SPDR_TO_SECTOR[s.symbol]
-                  const clickable = !!sectorName
+                  // A 股无对应选股器行业映射，“→ 选股”按钮仅在美股后可用
+                  const clickable = market === 'us' && !!sectorName
                   const isExpanded = expanded.has(s.symbol)
                   const zone = ZONE_META[s.logbias?.zone ?? 'unknown'] ?? ZONE_META.unknown ?? { label: '-', cls: 'bg-gray-50 text-gray-400' }
                   const goScreener = (e: MouseEvent) => {
@@ -293,7 +331,7 @@ export default function SectorStrengthPage() {
                       <td className="px-4 py-3">
                         <Badge>{s.category}</Badge>
                       </td>
-                      <td className="px-4 py-3 text-right font-mono text-xs">${s.current?.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-right font-mono text-xs">{currencySymbol}{s.current?.toFixed(2)}</td>
                       <td className={`px-4 py-3 text-right font-mono text-xs font-medium ${pctColor(s.chg_5d)}`}>
                         {fmtPct(s.chg_5d)}
                       </td>
@@ -332,7 +370,7 @@ export default function SectorStrengthPage() {
                               )}
                             </span>
                             <span>
-                              RS 相对强弱 (vs SPY)
+                              RS 相对强弱 (vs {benchmarkLabel})
                               {s.rs_line?.value != null && (
                                 <span className="ml-1"><strong style={{ color: '#16a34a' }}>{s.rs_line.value.toFixed(2)}%</strong></span>
                               )}

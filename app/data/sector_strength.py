@@ -1,19 +1,29 @@
-"""板块强度雷达 - 核心数据层
+"""板块强度雷达 - 美股实现（数据源 + 宇宙 + 调度）
 
 提供 41 只 ETF（11 SPDR 一级行业 + 30 主题 ETF）的：
 - 多时间框架表现 (5d/15d/30d/60d)
 - 相对强度 RS（vs SPY 超额收益）
 - 资金流向信号（量价代理）
+
+核心计算函数以抓取到 :mod:`app.data.sector_strength_common`，与 A 股共享。
 """
 
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional
 
-import numpy as np
 import pandas as pd
 import yfinance as yf
+
+from app.data.sector_strength_common import (
+    RS_WEIGHTS,
+    _compute_flow,
+    _compute_logbias,
+    _compute_performance,
+    _compute_return,
+    _compute_rs,
+    _compute_rs_series,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +58,6 @@ THEMATIC_ETFS = {
 ALL_ETFS = {**SPDR_SECTORS, **THEMATIC_ETFS}
 
 BENCHMARK = "SPY"
-
-# RS 复合权重
-RS_WEIGHTS = {"5d": 0.10, "15d": 0.20, "30d": 0.30, "60d": 0.40}
 
 # 缓存
 _cache: dict = {"data": None, "ts": 0.0}
@@ -95,215 +102,7 @@ def _batch_download(symbols: list[str], period: str = "3mo") -> dict[str, pd.Dat
     return result
 
 
-# ─── 性能指标计算 ───
-
-def _compute_return(closes: pd.Series, days: int) -> Optional[float]:
-    """计算 N 日收益率（百分比）"""
-    if len(closes) < days + 1:
-        return None
-    current = closes.iloc[-1]
-    past = closes.iloc[-(days + 1)]
-    if past == 0 or pd.isna(past) or pd.isna(current):
-        return None
-    return round(((current - past) / past) * 100, 2)
-
-
-def _compute_performance(df: pd.DataFrame) -> dict:
-    """计算单个 ETF 的多时间框架表现"""
-    closes = df["Close"]
-    current = float(closes.iloc[-1])
-
-    # 量比
-    volumes = df["Volume"]
-    vol_ma20 = volumes.rolling(20).mean().iloc[-1] if len(volumes) >= 20 else volumes.mean()
-    vol_recent = volumes.tail(5).mean()
-    vol_ratio = round(float(vol_recent / vol_ma20), 2) if vol_ma20 > 0 else 1.0
-
-    return {
-        "current": round(current, 2),
-        "chg_5d": _compute_return(closes, 5),
-        "chg_15d": _compute_return(closes, 15),
-        "chg_30d": _compute_return(closes, 30),
-        "chg_60d": _compute_return(closes, 60),
-        "vol_ratio": vol_ratio,
-    }
-
-
-# ─── 对数均线偏离度 (LOGBIAS) ───
-# 刘晨明/广发策略「对数均线偏离度」减法版：
-#   EMA20 = EMA(ln(Close), 20)
-#   LOGBIAS = (ln(Close) - EMA20) × 100
-# 注意：先对收盘价取自然对数再算 EMA，而非 ln(EMA(close))。
-
-# 阈值带（减法版，单位 %）
-_LOGBIAS_OVERHEATED = 15.0   # > 15%   过热，别追
-_LOGBIAS_MODERATE = 5.0      # 5%~15%  适中，可追
-_LOGBIAS_ABOVE = 0.0         # 0%~5%   均线上方，安心
-_LOGBIAS_EXIT = -5.0         # -5%~0%  刚跌破，坚守；< -5% 失速，离场
-
-
-def _classify_zone(v: Optional[float]) -> str:
-    """根据 LOGBIAS 数值划分状态区间"""
-    if v is None:
-        return "unknown"
-    if v > _LOGBIAS_OVERHEATED:
-        return "overheated"   # 过热
-    if v >= _LOGBIAS_MODERATE:
-        return "moderate"     # 适中
-    if v >= _LOGBIAS_ABOVE:
-        return "above"        # 均线上方
-    if v >= _LOGBIAS_EXIT:
-        return "hold"         # 刚跌破，坚守
-    return "exit"             # 失速，离场
-
-
-def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 130) -> dict:
-    """计算对数均线偏离度（减法版）及其历史序列
-
-    series_len 默认 130 个交易日（覆盖近 6 个月），前端据此截取 6/3/1 个月三段展示。
-    """
-    closes = df["Close"].dropna()
-    closes = closes[closes > 0]  # 防御异常脏数据：价格必须 > 0，否则 np.log 返回 -inf
-
-    # EMA 需要预热期消除初始值影响，20 日 EMA 至少需 2 倍样本（40 日）才能与通达信等软件对齐
-    warmup_period = span * 2
-    if len(closes) < warmup_period:
-        return {"value": None, "zone": "unknown", "series": [], "dates": [],
-                "log_close": [], "ema": []}
-
-    ln_close = np.log(closes)
-    ema = ln_close.ewm(span=span, adjust=False).mean()
-    logbias = (ln_close - ema) * 100
-
-    current = round(float(logbias.iloc[-1]), 2)
-    tail = logbias.tail(series_len)
-    return {
-        "value": current,
-        "zone": _classify_zone(current),
-        "series": [round(float(v), 2) for v in tail],
-        "dates": [d.strftime("%m-%d") for d in tail.index],
-        # 上图用：对数值 ln(Close) 与其 EMA20 走势（保留3位小数以保持均线平滑度）
-        "log_close": [round(float(v), 3) for v in ln_close.tail(series_len)],
-        "ema": [round(float(v), 3) for v in ema.tail(series_len)],
-    }
-
-
-# ─── 相对强度 (RS) ───
-
-def _compute_rs(etf_closes: pd.Series, spy_closes: pd.Series) -> dict:
-    """计算 ETF 相对于 SPY 的 RS 指标"""
-    rs = {}
-    for label, days in [("5d", 5), ("15d", 15), ("30d", 30), ("60d", 60)]:
-        etf_ret = _compute_return(etf_closes, days)
-        spy_ret = _compute_return(spy_closes, days)
-        if etf_ret is not None and spy_ret is not None:
-            rs[f"rs_{label}"] = round(etf_ret - spy_ret, 2)
-        else:
-            rs[f"rs_{label}"] = None
-
-    # 复合 RS
-    composite = 0.0
-    valid_weight = 0.0
-    for label, weight in RS_WEIGHTS.items():
-        val = rs.get(f"rs_{label}")
-        if val is not None:
-            composite += val * weight
-            valid_weight += weight
-    rs["composite"] = round(composite / valid_weight, 2) if valid_weight > 0 else None
-
-    return rs
-
-
-def _compute_rs_series(
-    etf_closes: pd.Series,
-    spy_closes: pd.Series,
-    sma_period: int = 21,
-    series_len: int = 130,
-) -> dict:
-    """计算 Mansfield 相对强弱线（RS Line）及其历史序列。
-
-    RP  = ETF_Close / SPY_Close          相对价格
-    RSM = (RP / SMA(RP, N) - 1) × 100    零轴上方=强于大盘，下方=弱于大盘
-
-    与乘离度同为短中期指标（N=21 约一个月），时间尺度与 EMA20 乘离度匹配。
-    """
-    aligned = pd.concat(
-        [etf_closes.dropna(), spy_closes.dropna()], axis=1, keys=["etf", "spy"]
-    ).dropna()
-    aligned = aligned[(aligned["etf"] > 0) & (aligned["spy"] > 0)]
-
-    if len(aligned) < sma_period + 5:
-        return {"value": None, "series": [], "dates": []}
-
-    rp = aligned["etf"] / aligned["spy"]
-    sma = rp.rolling(sma_period).mean()
-    rsm = ((rp / sma) - 1) * 100
-    rsm = rsm.dropna()
-
-    if rsm.empty:
-        return {"value": None, "series": [], "dates": []}
-
-    current = round(float(rsm.iloc[-1]), 2)
-    tail = rsm.tail(series_len)
-    return {
-        "value": current,
-        "series": [round(float(v), 2) for v in tail],
-        "dates": [d.strftime("%m-%d") for d in tail.index],
-    }
-
-
-# ─── 资金流向信号 ───
-
-def _compute_flow(df: pd.DataFrame) -> dict:
-    """计算资金流向代理指标"""
-    if len(df) < 20:
-        return {"flow_5d": None, "vol_surge": None, "direction": "neutral", "accumulation": None}
-
-    closes = df["Close"]
-    volumes = df["Volume"]
-    daily_returns = closes.pct_change()
-
-    # 1. Dollar volume flow (5d): Σ(daily_return × volume) / avg_dollar_volume_20d
-    last_20 = df.tail(20)
-    avg_dollar_vol = (last_20["Close"] * last_20["Volume"]).mean()
-
-    last_5_returns = daily_returns.tail(5)
-    last_5_volumes = volumes.tail(5)
-    flow_5d_raw = (last_5_returns * last_5_volumes).sum()
-    flow_5d = round(float(flow_5d_raw / avg_dollar_vol), 4) if avg_dollar_vol > 0 else 0.0
-
-    # 2. Volume surge: avg(vol_5d) / avg(vol_20d)
-    vol_5d_avg = volumes.tail(5).mean()
-    vol_20d_avg = volumes.tail(20).mean()
-    vol_surge = round(float(vol_5d_avg / vol_20d_avg), 2) if vol_20d_avg > 0 else 1.0
-
-    # 3. Accumulation score: 近 10 日中放量上涨天数 / 10
-    last_10 = df.tail(10)
-    last_10_returns = last_10["Close"].pct_change()
-    last_10_volumes = last_10["Volume"]
-    vol_avg = volumes.tail(20).mean()
-    up_vol_days = 0
-    for i in range(1, len(last_10)):
-        ret = last_10_returns.iloc[i]
-        vol = last_10_volumes.iloc[i]
-        if not pd.isna(ret) and ret > 0 and not pd.isna(vol) and vol > vol_avg:
-            up_vol_days += 1
-    accumulation = round(up_vol_days / 9, 2)  # 9 because pct_change loses first row
-
-    # 4. Flow direction
-    if flow_5d > 0.05 and vol_surge > 1.2:
-        direction = "inflow"
-    elif flow_5d < -0.05 and vol_surge > 1.2:
-        direction = "outflow"
-    else:
-        direction = "neutral"
-
-    return {
-        "flow_5d": flow_5d,
-        "vol_surge": vol_surge,
-        "direction": direction,
-        "accumulation": accumulation,
-    }
+# ─── 性能指标计算（迁移到 sector_strength_common） ───
 
 
 # ─── 主入口 ───
