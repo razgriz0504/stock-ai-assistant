@@ -4,6 +4,7 @@ import { api } from '@/api/client'
 // ── State Machine: IDLE → PENDING → RUNNING → SUCCESS / FAILED ──
 
 export type ScreenerStatus = 'idle' | 'pending' | 'running' | 'success' | 'failed'
+export type Market = 'us' | 'cn'
 
 export interface ScreenerResult {
   symbol: string
@@ -65,11 +66,13 @@ interface ScreenerState {
   // Filters & code
   filtersJson: string
   customCode: string
+  market: Market
 
   // Actions
   setFilters: (json: string) => void
   setCustomCode: (code: string) => void
   setActivePreset: (id: number | null) => void
+  setMarket: (m: Market) => void
   loadPreset: (preset: ScreenerPreset) => void
 
   // Async actions
@@ -98,10 +101,12 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
   activePresetId: null,
   filtersJson: '{}',
   customCode: '',
+  market: 'us',
 
   setFilters: (json) => set({ filtersJson: json }),
   setCustomCode: (code) => set({ customCode: code }),
   setActivePreset: (id) => set({ activePresetId: id }),
+  setMarket: (m) => set({ market: m }),
 
   loadPreset: (preset) => set({
     activePresetId: preset.id,
@@ -110,7 +115,7 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
   }),
 
   startRun: async () => {
-    const { filtersJson, customCode, activePresetId } = get()
+    const { filtersJson, customCode, activePresetId, market } = get()
     set({ status: 'pending', errorMessage: null, results: [], progress: 0 })
 
     try {
@@ -121,6 +126,7 @@ export const useScreenerStore = create<ScreenerState>((set, get) => ({
         filters,
         custom_code: customCode || '',
         preset_id: activePresetId || null,
+        market,
       })
       set({ status: 'running', runId: res.data.run_id })
     } catch (err: unknown) {

@@ -25,6 +25,7 @@ class RunRequest(BaseModel):
     filters: dict = {}
     custom_code: str = ""
     preset_id: Optional[int] = None
+    market: str = "us"  # "us" | "cn"
 
 
 class PresetRequest(BaseModel):
@@ -64,6 +65,7 @@ async def start_screener(req: RunRequest, background_tasks: BackgroundTasks):
                 custom_code=req.custom_code,
                 trigger="manual",
                 preset_id=req.preset_id,
+                market=req.market,
             )
         except Exception as e:
             logger.error(f"Background screener failed: {e}")

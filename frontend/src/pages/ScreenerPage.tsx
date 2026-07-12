@@ -166,6 +166,8 @@ const CATEGORY_LABELS = {
 export default function ScreenerPage() {
   const [activeTab, setActiveTab] = useState('run')
   const store = useScreenerStore()
+  const market = store.market
+  const setMarket = store.setMarket
 
   useEffect(() => {
     store.fetchPresets()
@@ -179,15 +181,43 @@ export default function ScreenerPage() {
     { id: 'schedule', label: '定时任务' },
   ]
 
+  const marketDesc = market === 'cn'
+    ? '沪深300 + 中证500 智能筛选'
+    : '标普500 + 纳斯达克100 智能筛选'
+
   return (
     <div>
-      <div className="mb-8">
-        <span className="section-label flex items-center gap-2 mb-3">
-          <span className="w-1.5 h-1.5 rounded-full bg-copper inline-block" />
-          Stock Screener
-        </span>
-        <h1 className="page-title">选<span className="text-copper">股器</span></h1>
-        <p className="text-sm text-gray-500 mt-2">标普500 + 纳斯达克100 智能筛选</p>
+      <div className="mb-8 flex items-end justify-between">
+        <div>
+          <span className="section-label flex items-center gap-2 mb-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-copper inline-block" />
+            Stock Screener
+          </span>
+          <h1 className="page-title">选<span className="text-copper">股器</span></h1>
+          <p className="text-sm text-gray-500 mt-2">{marketDesc}</p>
+        </div>
+        <div className="inline-flex rounded-md border border-cream-300 overflow-hidden">
+          <button
+            onClick={() => setMarket('us')}
+            className={`px-3 py-1.5 text-xs font-mono transition-colors ${
+              market === 'us'
+                ? 'bg-copper text-white'
+                : 'bg-white text-gray-600 hover:bg-cream-50'
+            }`}
+          >
+            美股
+          </button>
+          <button
+            onClick={() => setMarket('cn')}
+            className={`px-3 py-1.5 text-xs font-mono transition-colors border-l border-cream-300 ${
+              market === 'cn'
+                ? 'bg-copper text-white'
+                : 'bg-white text-gray-600 hover:bg-cream-50'
+            }`}
+          >
+            A 股
+          </button>
+        </div>
       </div>
 
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />

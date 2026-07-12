@@ -13,10 +13,13 @@ import pandas_ta as ta
 
 from db.models import SessionLocal, ScreenerRun, ScreenerResult
 from app.data.yfinance_provider import YFinanceProvider
+from app.data.akshare_provider import AkshareProvider
 from app.screener.universe import get_universe
+from app.screener.universe_cn import get_universe_cn, get_universe_cn_names
 from app.screener.filters import apply_fundamental_filters, apply_technical_filters
 from app.analysis.stock_analyzer import calculate_score
 from app.data.rs_rating import get_rs_snapshot, compute_rs_snapshot
+from app.data.rs_rating_cn import get_rs_snapshot_cn
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,29 @@ class _NumpyEncoder(json.JSONEncoder):
         return super().default(obj)
 
 _yf_provider = YFinanceProvider()
+_ak_provider = AkshareProvider()
+
+
+def _get_provider(market: str):
+    """按 market 返回对应的 DataProvider."""
+    if market == "cn":
+        return _ak_provider
+    return _yf_provider
+
+
+def _get_universe(market: str) -> list[str]:
+    """按 market 返回对应的股票池."""
+    if market == "cn":
+        return get_universe_cn()
+    return get_universe()
+
+
+def _get_rs_snapshot(market: str, symbols: list[str]) -> dict[str, float]:
+    """按 market 返回对应的 RS 快照."""
+    if market == "cn":
+        return get_rs_snapshot_cn(symbols)
+    return get_rs_snapshot(symbols)
+
 
 # Lock to prevent concurrent screener runs
 _running_lock = asyncio.Lock()
@@ -140,6 +166,7 @@ async def run_screener(
     custom_code: str = "",
     trigger: str = "manual",
     preset_id: Optional[int] = None,
+    market: str = "us",
 ) -> int:
     """Run a full screener scan. Returns run_id.
 
@@ -149,7 +176,7 @@ async def run_screener(
         raise RuntimeError("A screener scan is already running")
 
     async with _running_lock:
-        return await _execute_screener(filters_config, custom_code, trigger, preset_id)
+        return await _execute_screener(filters_config, custom_code, trigger, preset_id, market)
 
 
 async def _execute_screener(
@@ -157,6 +184,7 @@ async def _execute_screener(
     custom_code: str,
     trigger: str,
     preset_id: Optional[int],
+    market: str = "us",
 ) -> int:
     """Internal screener execution logic."""
     version = _get_next_version()
@@ -178,8 +206,10 @@ async def _execute_screener(
     db.close()
 
     try:
+        provider = _get_provider(market)
+
         # Step 1: Get universe
-        symbols = await asyncio.to_thread(get_universe)
+        symbols = await asyncio.to_thread(_get_universe, market)
         _update_run(run_id, total_stocks=len(symbols), progress_pct=5)
 
         # Step 2: Check if ANY filters are enabled
@@ -226,7 +256,7 @@ async def _execute_screener(
 
         if has_fundamental_filters:
             fundamentals = await asyncio.to_thread(
-                _yf_provider.get_batch_fundamentals, symbols, 10
+                provider.get_batch_fundamentals, symbols, 10
             )
             _update_run(run_id, progress_pct=20)
 
@@ -250,7 +280,7 @@ async def _execute_screener(
         history_data: dict[str, pd.DataFrame] = {}
         if need_ohlcv and symbols_to_scan:
             history_data = await asyncio.to_thread(
-                _yf_provider.get_batch_history, symbols_to_scan, "2y"
+                provider.get_batch_history, symbols_to_scan, "2y"
             )
             logger.info(f"Screener: got OHLCV data for {len(history_data)}/{len(symbols_to_scan)} stocks")
         _update_run(run_id, progress_pct=60)
@@ -265,7 +295,7 @@ async def _execute_screener(
         technical_config = filters_config.get("technical", {})
         if technical_config.get("sepa_rs_rating", {}).get("enabled", False):
             rs_snapshot = await asyncio.to_thread(
-                get_rs_snapshot, symbols_to_scan
+                _get_rs_snapshot, market, symbols_to_scan
             )
             logger.info(f"RS snapshot loaded: {len(rs_snapshot)} stocks")
 
@@ -382,7 +412,7 @@ async def _execute_screener(
             if passed_symbols:
                 logger.info(f"Fetching fundamentals for {len(passed_symbols)} passed stocks...")
                 extra_fundamentals = await asyncio.to_thread(
-                    _yf_provider.get_batch_fundamentals, passed_symbols, 10
+                    provider.get_batch_fundamentals, passed_symbols, 10
                 )
                 # Update indicators_json with name/sector
                 for r in results:
