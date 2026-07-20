@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     # 图表临时文件目录
     charts_dir: str = "./charts"
 
+    # 富途 OpenD（只读数据源，代码层面禁止下单）
+    futu_enabled: bool = False
+    futu_opend_host: str = "127.0.0.1"
+    futu_opend_port: int = 11111
+    futu_trd_env: str = "SIMULATE"   # SIMULATE / REAL（仅查询）
+    futu_trd_market: str = "US"      # US / HK / CN
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

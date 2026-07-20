@@ -21,6 +21,7 @@ from app.api.sector_strength_api import router as sector_strength_router
 from app.api.dashboard_api import router as dashboard_router
 from app.api.vcp_monitor_api import router as vcp_monitor_router
 from app.api.storage_report_api import router as storage_report_router
+from app.api.futu_api import router as futu_router
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,
@@ -100,6 +101,7 @@ app.include_router(sector_strength_router)
 app.include_router(dashboard_router)
 app.include_router(vcp_monitor_router)
 app.include_router(storage_report_router)
+app.include_router(futu_router)
 
 
 @app.get("/")
