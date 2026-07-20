@@ -33,11 +33,22 @@ fi
 command -v curl >/dev/null || { echo "[futu-opend] 请先安装 curl" >&2; exit 1; }
 command -v tar  >/dev/null || { echo "[futu-opend] 请先安装 tar"  >&2; exit 1; }
 
-# 1) 下载 & 解压
+# 1) 下载 & 解压（支持 file:///path 本地文件路径，绕过云 IP 无法访问 Futu CDN 的情况）
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
-echo "[futu-opend] 下载中..."
-curl -fSL "$OPEND_URL" -o "$TMP_DIR/opend.tar.gz"
+if [[ "$OPEND_URL" == file://* ]]; then
+  LOCAL_PATH="${OPEND_URL#file://}"
+  echo "[futu-opend] 使用本地文件：$LOCAL_PATH"
+  [ -f "$LOCAL_PATH" ] || { echo "[futu-opend] 本地文件不存在：$LOCAL_PATH" >&2; exit 1; }
+  cp "$LOCAL_PATH" "$TMP_DIR/opend.tar.gz"
+elif [[ "$OPEND_URL" == /* ]]; then
+  echo "[futu-opend] 使用本地文件：$OPEND_URL"
+  [ -f "$OPEND_URL" ] || { echo "[futu-opend] 本地文件不存在：$OPEND_URL" >&2; exit 1; }
+  cp "$OPEND_URL" "$TMP_DIR/opend.tar.gz"
+else
+  echo "[futu-opend] 下载中..."
+  curl -fSL --connect-timeout 30 "$OPEND_URL" -o "$TMP_DIR/opend.tar.gz"
+fi
 mkdir -p "$INSTALL_DIR"
 tar -xzf "$TMP_DIR/opend.tar.gz" -C "$INSTALL_DIR" --strip-components=1
 # 兼容不同压缩包结构：如果解压出的还是子目录，把内容再摊平一次
