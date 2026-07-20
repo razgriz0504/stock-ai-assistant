@@ -7,7 +7,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from db.models import SessionLocal, WeeklyReport, ReportConfig, UserPreference
+from db.models import SessionLocal, WeeklyReport, ReportConfig, User, UserPreference
+from app.auth import get_current_user, require_admin
 from app.report.weekly_report import (
     generate_full_report,
     get_or_create_report_config,
@@ -23,7 +24,7 @@ from app.report.weekly_report import (
 from app.x_monitor.processor import DEFAULT_X_TWEET_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 WEB_USER_ID = "web_default"
 
@@ -88,13 +89,14 @@ async def start_generate(
     req: GenerateRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(_get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """异步生成周报（返回 202 Accepted，前端轮询状态）"""
-    # 解析 watchlist
+    # 解析 watchlist（未传入时默认取当前 admin 的）
     watchlist = req.watchlist
     if watchlist is None:
         pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
+            UserPreference.user_id == current_user.id
         ).first()
         import json
         watchlist = json.loads(pref.watchlist) if pref and pref.watchlist else []

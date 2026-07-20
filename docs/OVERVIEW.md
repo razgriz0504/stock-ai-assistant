@@ -33,6 +33,7 @@
 - 启动命令: `uvicorn main:app --host 0.0.0.0 --port 8000`
 - 配置通过 `.env` 文件（参考 `.env.example`）
 - 数据库自动初始化 + 自动迁移缺失列
+- 账号体系注入：首次启动会根据 `INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_PASSWORD` 自动播种首个 admin；详见 [docs/ACCOUNTS.md](./ACCOUNTS.md)
 
 ## 默认 LLM
 

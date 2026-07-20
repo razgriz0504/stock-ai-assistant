@@ -13,13 +13,18 @@ import logging
 from typing import Optional
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from config import settings
+from app.auth import require_admin
 from app.data.futu_provider import futu_provider
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/futu", tags=["futu"])
+router = APIRouter(
+    prefix="/api/futu",
+    tags=["futu"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 # ─── 工具 ───

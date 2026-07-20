@@ -7,9 +7,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_current_user, require_admin
 from db.models import SessionLocal, StorageReport, StorageReportConfig
 from app.storage_report.constants import CATEGORIES, THEMES, VENDORS, METRIC_DICT
 from app.storage_report import analyzer
@@ -29,7 +30,11 @@ from app.storage_report.prompts import (
 from app.llm.client import get_model
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/storage-report", tags=["storage-report"])
+router = APIRouter(
+    prefix="/api/storage-report",
+    tags=["storage-report"],
+    dependencies=[Depends(get_current_user)],
+)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -170,7 +175,7 @@ def _run_generate(report_id: int, categories: list[str], time_range: str):
         db.close()
 
 
-@router.post("/generate", status_code=202)
+@router.post("/generate", status_code=202, dependencies=[Depends(require_admin)])
 async def start_generate(req: GenerateRequest, background_tasks: BackgroundTasks):
     """异步生成完整报告（返回 202，前端轮询 /status/{id}）"""
     db = SessionLocal()
@@ -287,7 +292,7 @@ async def get_report(report_id: int):
         db.close()
 
 
-@router.delete("/report/{report_id}")
+@router.delete("/report/{report_id}", dependencies=[Depends(require_admin)])
 async def delete_report(report_id: int):
     """删除指定报告"""
     db = SessionLocal()
@@ -337,7 +342,7 @@ async def get_config():
         db.close()
 
 
-@router.post("/config")
+@router.post("/config", dependencies=[Depends(require_admin)])
 async def update_config(req: ConfigUpdate):
     """更新 Prompt 与调度配置，并同步调度器"""
     db = SessionLocal()

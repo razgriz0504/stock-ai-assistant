@@ -6,15 +6,16 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_current_user, require_admin
 from db.models import (
     SessionLocal, ScreenerPreset, ScreenerRun, ScreenerResult, ScreenerConfig
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,7 +50,7 @@ class ScheduleRequest(BaseModel):
 # API Endpoints
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/api/screener/run")
+@router.post("/api/screener/run", dependencies=[Depends(require_admin)])
 async def start_screener(req: RunRequest, background_tasks: BackgroundTasks):
     """Start a screener scan (async background task)."""
     from app.screener.engine import run_screener, _running_lock
@@ -84,7 +85,7 @@ async def start_screener(req: RunRequest, background_tasks: BackgroundTasks):
         db.close()
 
 
-@router.post("/api/screener/reset-lock")
+@router.post("/api/screener/reset-lock", dependencies=[Depends(require_admin)])
 async def reset_lock():
     """Force-release the screener running lock (use when stuck at 409)."""
     from app.screener.engine import _running_lock
@@ -248,7 +249,7 @@ async def list_presets():
         db.close()
 
 
-@router.post("/api/screener/presets")
+@router.post("/api/screener/presets", dependencies=[Depends(require_admin)])
 async def save_preset(req: PresetRequest):
     db = SessionLocal()
     try:
@@ -273,7 +274,7 @@ async def save_preset(req: PresetRequest):
         db.close()
 
 
-@router.delete("/api/screener/presets/{preset_id}")
+@router.delete("/api/screener/presets/{preset_id}", dependencies=[Depends(require_admin)])
 async def delete_preset(preset_id: int):
     db = SessionLocal()
     try:
@@ -309,7 +310,7 @@ async def get_schedule():
         db.close()
 
 
-@router.post("/api/screener/schedule")
+@router.post("/api/screener/schedule", dependencies=[Depends(require_admin)])
 async def update_schedule(req: ScheduleRequest):
     db = SessionLocal()
     try:

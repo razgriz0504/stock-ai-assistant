@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     futu_trd_env: str = "SIMULATE"   # SIMULATE / REAL（仅查询）
     futu_trd_market: str = "US"      # US / HK / CN
 
+    # 账户体系 / JWT
+    jwt_secret: str = ""                # 生产必填；openssl rand -hex 32
+    jwt_algorithm: str = "HS256"
+    jwt_expire_days: int = 7
+    # 首个 admin 播种（users 表为空时生效，后续忽略）
+    initial_admin_username: str = "admin"
+    initial_admin_password: str = ""
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

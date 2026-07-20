@@ -28,6 +28,8 @@ class MonitorRule(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     triggered_at = Column(DateTime, nullable=True)
     description = Column(String(200), default="")
+    # 归属用户（nullable 兼容存量数据，migrate_ownership.py 会一次性回填）
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
 
 class BacktestRecord(Base):
@@ -46,6 +48,7 @@ class BacktestRecord(Base):
     report_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     feishu_user_id = Column(String(100), default="")
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
 
 class UserPreference(Base):
@@ -57,6 +60,8 @@ class UserPreference(Base):
     default_model = Column(String(50), default="")
     watchlist = Column(Text, default="")  # JSON: ["AAPL","TSLA"]
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # 归属 Web 系统用户（与 feishu_user_id 二选一）
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=True)
 
 
 class ScoringRun(Base):
@@ -368,6 +373,10 @@ def _migrate_missing_columns():
         ("vcp_scan_results", "last_close", "REAL DEFAULT NULL"),
         # VCP 监控：拒绝原因（status=rejected_vcp 时记录具体原因标记）
         ("vcp_scan_results", "reject_reason", "TEXT DEFAULT NULL"),
+        # 账户体系：业务表归属用户（新添列）
+        ("monitor_rules", "user_id", "INTEGER DEFAULT NULL"),
+        ("backtest_records", "user_id", "INTEGER DEFAULT NULL"),
+        ("user_preferences", "user_id", "INTEGER DEFAULT NULL"),
     ]
     with engine.connect() as conn:
         for table, column, col_type in migrations:
@@ -495,3 +504,45 @@ def get_or_create_x_accounts(db):
         logger = logging.getLogger(__name__)
         logger.info(f"Seeded {added} default X accounts")
     return db.query(XAccount).all()
+
+
+# ════════════════════════════════════════════════════════════════
+# 账户体系：用户与 Chat 历史
+# ════════════════════════════════════════════════════════════════
+
+class User(Base):
+    """Web 系统登录用户（admin / user 双角色）"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    username = Column(String(64), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)   # bcrypt 哈希
+    display_name = Column(String(128), default="")
+    role = Column(String(20), default="user", nullable=False)   # "admin" / "user"
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login_at = Column(DateTime, nullable=True)
+
+
+class ChatConversation(Base):
+    """AI 对话会话（按用户隔离）"""
+    __tablename__ = "chat_conversations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    title = Column(String(200), default="")            # 默认取首条用户消息前 30 字
+    model = Column(String(100), default="")             # 创建时的默认模型
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class ChatMessage(Base):
+    """AI 对话消息"""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey("chat_conversations.id"), index=True, nullable=False)
+    role = Column(String(16), nullable=False)           # "user" / "assistant"
+    content = Column(Text, nullable=False)
+    model = Column(String(100), default="")             # assistant 回复时的实际模型
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)

@@ -12,15 +12,14 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from db.models import SessionLocal, UserPreference, XTweet
+from app.auth import get_current_user
+from db.models import SessionLocal, User, UserPreference, XTweet
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
-
-WEB_USER_ID = "web_default"
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 # ─── Pydantic 模型 ───
 
@@ -80,13 +79,16 @@ def _load_items(pref: Optional[UserPreference]) -> list[dict]:
     return [it for it in items if it["symbol"]]
 
 
-def _save_items(db, items: list[dict]) -> None:
-    pref = db.query(UserPreference).filter(
-        UserPreference.feishu_user_id == WEB_USER_ID
-    ).first()
+def _get_pref(db, user_id: int) -> Optional[UserPreference]:
+    """读当前用户的偏好；不存在返回 None。"""
+    return db.query(UserPreference).filter(UserPreference.user_id == user_id).first()
+
+
+def _save_items(db, user_id: int, items: list[dict]) -> None:
+    pref = _get_pref(db, user_id)
     payload = json.dumps(items, ensure_ascii=False)
     if not pref:
-        pref = UserPreference(feishu_user_id=WEB_USER_ID, watchlist=payload)
+        pref = UserPreference(user_id=user_id, watchlist=payload)
         db.add(pref)
     else:
         pref.watchlist = payload
@@ -97,13 +99,11 @@ def _save_items(db, items: list[dict]) -> None:
 
 
 @router.get("/api/watchlist")
-async def get_watchlist():
-    """获取当前关注列表(同时返回旧/新两种字段以兼容)"""
+async def get_watchlist(current_user: User = Depends(get_current_user)):
+    """获取当前用户的关注列表(同时返回旧/新两种字段以兼容)"""
     db = SessionLocal()
     try:
-        pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
-        ).first()
+        pref = _get_pref(db, current_user.id)
         items = _load_items(pref)
         return {
             "stocks": [it["symbol"] for it in items],   # 兼容旧前端
@@ -114,13 +114,14 @@ async def get_watchlist():
 
 
 @router.post("/api/watchlist")
-async def update_watchlist(req: WatchlistUpdate):
+async def update_watchlist(
+    req: WatchlistUpdate,
+    current_user: User = Depends(get_current_user),
+):
     """整体替换(旧接口,兼容已有 WatchlistPage)"""
     db = SessionLocal()
     try:
-        pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
-        ).first()
+        pref = _get_pref(db, current_user.id)
         existing = {it["symbol"]: it for it in _load_items(pref)}
 
         # 去重+大写,保留旧 source/added_at,缺失则新建
@@ -141,7 +142,7 @@ async def update_watchlist(req: WatchlistUpdate):
                     "note": "",
                 })
 
-        _save_items(db, new_items)
+        _save_items(db, current_user.id, new_items)
         return {
             "success": True,
             "stocks": [it["symbol"] for it in new_items],
@@ -152,7 +153,10 @@ async def update_watchlist(req: WatchlistUpdate):
 
 
 @router.post("/api/watchlist/add")
-async def add_watchlist(req: WatchlistAddRequest):
+async def add_watchlist(
+    req: WatchlistAddRequest,
+    current_user: User = Depends(get_current_user),
+):
     """添加单只股票(已存在则更新 source/note)"""
     sym = (req.symbol or "").strip().upper()
     if not sym:
@@ -160,9 +164,7 @@ async def add_watchlist(req: WatchlistAddRequest):
 
     db = SessionLocal()
     try:
-        pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
-        ).first()
+        pref = _get_pref(db, current_user.id)
         items = _load_items(pref)
 
         already_exists = False
@@ -182,7 +184,7 @@ async def add_watchlist(req: WatchlistAddRequest):
                 "note": req.note or "",
             })
 
-        _save_items(db, items)
+        _save_items(db, current_user.id, items)
         return {
             "success": True,
             "already_exists": already_exists,
@@ -193,7 +195,10 @@ async def add_watchlist(req: WatchlistAddRequest):
 
 
 @router.post("/api/watchlist/remove")
-async def remove_watchlist(req: WatchlistRemoveRequest):
+async def remove_watchlist(
+    req: WatchlistRemoveRequest,
+    current_user: User = Depends(get_current_user),
+):
     """移除单只股票"""
     sym = (req.symbol or "").strip().upper()
     if not sym:
@@ -201,13 +206,11 @@ async def remove_watchlist(req: WatchlistRemoveRequest):
 
     db = SessionLocal()
     try:
-        pref = db.query(UserPreference).filter(
-            UserPreference.feishu_user_id == WEB_USER_ID
-        ).first()
+        pref = _get_pref(db, current_user.id)
         items = _load_items(pref)
         new_items = [it for it in items if it["symbol"] != sym]
         removed = len(items) != len(new_items)
-        _save_items(db, new_items)
+        _save_items(db, current_user.id, new_items)
         return {
             "success": True,
             "removed": removed,

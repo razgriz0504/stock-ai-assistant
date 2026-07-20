@@ -22,6 +22,9 @@ from app.api.dashboard_api import router as dashboard_router
 from app.api.vcp_monitor_api import router as vcp_monitor_router
 from app.api.storage_report_api import router as storage_report_router
 from app.api.futu_api import router as futu_router
+from app.api.auth_api import router as auth_router
+from app.api.user_admin_api import router as user_admin_router
+from app.auth.seed import ensure_initial_admin
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,
@@ -43,6 +46,11 @@ async def lifespan(app: FastAPI):
     logger.info("Starting Stock AI Assistant...")
     init_db()
     logger.info("Database initialized")
+    # 首个 admin 播种（users 表为空时生效）
+    try:
+        ensure_initial_admin()
+    except Exception as e:
+        logger.warning(f"Initial admin seeding skipped: {e}")
     # 种子默认 X 账号
     try:
         _seed_db = SessionLocal()
@@ -102,6 +110,8 @@ app.include_router(dashboard_router)
 app.include_router(vcp_monitor_router)
 app.include_router(storage_report_router)
 app.include_router(futu_router)
+app.include_router(auth_router)
+app.include_router(user_admin_router)
 
 
 @app.get("/")

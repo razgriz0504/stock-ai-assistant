@@ -6,14 +6,15 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_current_user, require_admin
 from app.x_monitor.client import XAPIError, get_user_id_by_username, validate_bearer
 from db.models import ReportConfig, SessionLocal, XAccount, XTweet, get_or_create_x_accounts
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 # ─────────── Pydantic 请求模型 ───────────
@@ -108,7 +109,7 @@ async def list_x_accounts():
         db.close()
 
 
-@router.post("/api/x-monitor/accounts")
+@router.post("/api/x-monitor/accounts", dependencies=[Depends(require_admin)])
 async def upsert_x_account(req: XAccountRequest):
     username = (req.username or "").strip().lstrip("@")
     if not username:
@@ -156,7 +157,7 @@ async def upsert_x_account(req: XAccountRequest):
         db.close()
 
 
-@router.delete("/api/x-monitor/accounts/{account_id}")
+@router.delete("/api/x-monitor/accounts/{account_id}", dependencies=[Depends(require_admin)])
 async def delete_x_account(account_id: int):
     db = SessionLocal()
     try:
@@ -170,7 +171,7 @@ async def delete_x_account(account_id: int):
         db.close()
 
 
-@router.post("/api/x-monitor/accounts/{account_id}/test")
+@router.post("/api/x-monitor/accounts/{account_id}/test", dependencies=[Depends(require_admin)])
 async def test_x_account(account_id: int):
     """用当前 Bearer Token 验证账号可访问"""
     db = SessionLocal()
@@ -220,7 +221,7 @@ async def get_x_config():
         db.close()
 
 
-@router.post("/api/x-monitor/config")
+@router.post("/api/x-monitor/config", dependencies=[Depends(require_admin)])
 async def update_x_config(req: XConfigRequest):
     """更新 Token / 启用 / 间隔，并同步调度器"""
     from app.monitor.scheduler import add_x_monitor_job, remove_x_monitor_job
@@ -260,7 +261,7 @@ async def update_x_config(req: XConfigRequest):
         db.close()
 
 
-@router.post("/api/x-monitor/validate-token")
+@router.post("/api/x-monitor/validate-token", dependencies=[Depends(require_admin)])
 async def validate_token():
     """验证当前已存的 Token 是否有效"""
     db = SessionLocal()
@@ -277,7 +278,7 @@ async def validate_token():
 
 # ─────────── 手动触发 ───────────
 
-@router.post("/api/x-monitor/fetch-now")
+@router.post("/api/x-monitor/fetch-now", dependencies=[Depends(require_admin)])
 async def fetch_now():
     """手动触发一轮抓取 + AI 处理"""
     from app.x_monitor.scheduler_job import run_x_monitor_job

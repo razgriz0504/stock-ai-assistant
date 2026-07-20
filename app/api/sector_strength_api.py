@@ -2,15 +2,16 @@
 
 import asyncio
 import logging
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 
+from app.auth import get_current_user
 from app.data.sector_strength import fetch_enhanced_sector_data
 from app.data.sector_strength_cn import fetch_enhanced_sector_data_cn
 from app.data.sector_strength_holdings import fetch_holdings
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.get("/api/sector-strength/data")

@@ -14,9 +14,10 @@ import asyncio
 from typing import Optional
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.auth import get_current_user, require_admin
 from db.models import (
     SessionLocal, VcpWatchlist, VcpScanRun, VcpScanResult, VcpAlert,
     ScreenerResult,
@@ -27,7 +28,11 @@ from app.data.yfinance_provider import YFinanceProvider
 from app.data.rs_rating import get_rs_snapshot
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/vcp-monitor", tags=["vcp-monitor"])
+router = APIRouter(
+    prefix="/api/vcp-monitor",
+    tags=["vcp-monitor"],
+    dependencies=[Depends(get_current_user)],
+)
 _yf = YFinanceProvider()
 
 
@@ -68,7 +73,7 @@ def get_watchlist():
         db.close()
 
 
-@router.post("/watchlist")
+@router.post("/watchlist", dependencies=[Depends(require_admin)])
 def add_to_watchlist(req: WatchlistAddRequest):
     """Add a symbol to VCP watchlist."""
     symbol = req.symbol.upper().strip()
@@ -101,7 +106,7 @@ def add_to_watchlist(req: WatchlistAddRequest):
         db.close()
 
 
-@router.delete("/watchlist/{item_id}")
+@router.delete("/watchlist/{item_id}", dependencies=[Depends(require_admin)])
 def remove_from_watchlist(item_id: int):
     """Remove (disable) a watchlist entry."""
     db = SessionLocal()
@@ -118,7 +123,7 @@ def remove_from_watchlist(item_id: int):
 
 # ── Scan Endpoints ──
 
-@router.post("/scan")
+@router.post("/scan", dependencies=[Depends(require_admin)])
 async def trigger_scan(source: str = "screener"):
     """Trigger a manual VCP scan.
 

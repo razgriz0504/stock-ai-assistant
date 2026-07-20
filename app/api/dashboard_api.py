@@ -16,21 +16,23 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.auth import get_current_user
 from db.models import (
     SessionLocal,
     ScreenerRun,
     ScreenerResult,
+    User,
     UserPreference,
     WeeklyReport,
     XTweet,
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
-WEB_USER_ID = "web_default"
+WEB_USER_ID = "web_default"  # 兼容旧飞书 bot 数据
 
 
 def _iso(dt: datetime | None) -> str | None:
@@ -42,11 +44,11 @@ def _iso(dt: datetime | None) -> str | None:
 # ═══════════════════════════════════════════════════════════════
 
 
-def _watchlist_block(db) -> dict[str, Any]:
+def _watchlist_block(db, user_id: int) -> dict[str, Any]:
     try:
         pref = (
             db.query(UserPreference)
-            .filter(UserPreference.feishu_user_id == WEB_USER_ID)
+            .filter(UserPreference.user_id == user_id)
             .first()
         )
         raw = json.loads(pref.watchlist) if pref and pref.watchlist else []
@@ -403,12 +405,12 @@ def _build_alerts(
 
 
 @router.get("/api/dashboard/summary")
-async def dashboard_summary():
+async def dashboard_summary(current_user: User = Depends(get_current_user)):
     """聚合首页所有展示数据 - 一次请求拿全"""
     db = SessionLocal()
     try:
         # 同步部分(读 SQLite)
-        watchlist = _watchlist_block(db)
+        watchlist = _watchlist_block(db, current_user.id)
         screener = _screener_block(db)
         report = _report_block(db)
         x_monitor = _x_monitor_block(db)

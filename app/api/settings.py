@@ -6,17 +6,18 @@ from pathlib import Path
 from collections import OrderedDict
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from config import settings
+from app.auth import require_admin
 from app.llm.client import (
     SUPPORTED_MODELS, get_model, set_model,
     _CUSTOM_API_BASE, _CUSTOM_API_KEY,
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_admin)])
 
 ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
 
