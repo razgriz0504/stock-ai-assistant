@@ -440,9 +440,49 @@ async def _send_feishu_alert(alert: VcpAlert):
             f"量能干枯比: {alert.volume_ratio:.2f}\n"
             f"{'⚡ 二次突破（经历过回撤失败）' if alert.prior_failed else ''}"
         )
+        sizing = _suggest_sizing_line(alert.pivot_price)
+        if sizing:
+            msg = f"{msg}\n{sizing}"
         await send_text(_default_chat_id, msg)
     except Exception as e:
         logger.error(f"Feishu alert send failed: {e}")
+
+
+def _suggest_sizing_line(pivot_price: float | None) -> str:
+    """根据组合风控设置与市场红绿灯生成建议仓位一行（假设止损位于 Pivot 下方 7%）"""
+    if not pivot_price or pivot_price <= 0:
+        return ""
+    try:
+        from db.models import SessionLocal, PortfolioSettings
+        from app.market.regime import get_current_risk_pct
+        from app.portfolio.service import suggest_position_size
+
+        db = SessionLocal()
+        try:
+            settings = db.query(PortfolioSettings).first()
+        finally:
+            db.close()
+        if not settings:
+            return ""
+
+        risk_pct, state = get_current_risk_pct(settings)
+        stop = pivot_price * 0.93  # 默认按 Pivot 下方 7% 止损估算
+        result = suggest_position_size(
+            account_size=settings.account_size,
+            risk_pct=risk_pct,
+            entry=pivot_price,
+            stop=stop,
+            max_position_pct=settings.max_position_pct,
+        )
+        light = {"green": "🟢", "yellow": "🟡", "red": "🔴"}.get(state, "")
+        return (
+            f"建议仓位: {result['shares']} 股 ≈ ${result['position_value']:,.0f} "
+            f"({result['position_pct']:.1f}%仓)\n"
+            f"风险: {risk_pct}% (市场{light}{state}) | 假设止损 -7% @ ${stop:.2f}"
+        )
+    except Exception as e:
+        logger.debug(f"Sizing suggestion skipped: {e}")
+        return ""
 
 
 def _cleanup_stale_watchlist():

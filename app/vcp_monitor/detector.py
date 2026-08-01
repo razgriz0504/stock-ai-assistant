@@ -197,7 +197,7 @@ def _find_base_high(df: pd.DataFrame) -> Optional[int]:
     best_idx = None
     best_score = -1
 
-    for idx in reversed(swing_highs[-5:]):  # Check last 5 candidates
+    for idx in reversed(swing_highs[-8:]):  # Check last 8 candidates (覆盖超长横盘基底)
         high_val = highs[idx]
         # Check that price declined after this point
         subsequent = df["Close"].iloc[idx:].values
@@ -404,11 +404,11 @@ def _calculate_score(
     elif volume_dry_ratio <= 0.8:
         score += 8
 
-    # 3. Base duration (15 pts) - 5 to 15 weeks (25-75 trading days)
+    # 3. Base duration (15 pts) - 5-15 周最优；Minervini 认可的有效基底为 3-65 周
     base_days = len(base_df)
     if 25 <= base_days <= 75:
         score += 15
-    elif 15 <= base_days <= 100:
+    elif 15 <= base_days <= 325:   # 3-65 周（325 交易日），长基底同样有效
         score += 10
     elif base_days > 5:
         score += 5

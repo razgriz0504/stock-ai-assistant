@@ -24,11 +24,14 @@ from app.api.storage_report_api import router as storage_report_router
 from app.api.futu_api import router as futu_router
 from app.api.auth_api import router as auth_router
 from app.api.user_admin_api import router as user_admin_router
+from app.api.market_api import router as market_router
+from app.api.portfolio_api import router as portfolio_router
 from app.auth.seed import ensure_initial_admin
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
     restore_screener_schedule, restore_x_monitor_schedule,
     restore_vcp_schedule, restore_storage_report_schedule,
+    restore_market_regime_schedule,
 )
 
 # 配置日志
@@ -68,6 +71,7 @@ async def lifespan(app: FastAPI):
     restore_x_monitor_schedule()
     restore_vcp_schedule()
     restore_storage_report_schedule()
+    restore_market_regime_schedule()
     logger.info("Scheduler started")
     logger.info(f"Default LLM: {settings.default_llm}")
 
@@ -112,6 +116,8 @@ app.include_router(storage_report_router)
 app.include_router(futu_router)
 app.include_router(auth_router)
 app.include_router(user_admin_router)
+app.include_router(market_router)
+app.include_router(portfolio_router)
 
 
 @app.get("/")

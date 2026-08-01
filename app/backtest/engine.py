@@ -12,6 +12,21 @@ from db.models import SessionLocal, BacktestRecord
 logger = logging.getLogger(__name__)
 _yf = YFinanceProvider()
 
+# ── 交易成本模型默认值 ──
+# 佣金按成交额收取（双边），滑点按成交价偏移（买贵卖贱）。
+# 5bps = 0.05%，对美股零佣券商偏保守，覆盖点差 + 冲击成本。
+DEFAULT_COMMISSION_BPS = 5.0
+DEFAULT_SLIPPAGE_BPS = 5.0
+
+
+def _exec_price(row, side: str, slippage_bps: float) -> float:
+    """成交价 = 当日开盘价 ± 滑点（买加卖减）。Open 缺失时退化为 Close。"""
+    base = row['Open']
+    if pd.isna(base) or base <= 0:
+        base = row['Close']
+    slip = slippage_bps / 10000.0
+    return float(base) * (1 + slip if side == 'buy' else 1 - slip)
+
 
 def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
                  initial_capital: float = 100000) -> str:
@@ -36,6 +51,10 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
 
     # 生成信号
     signals = strategy.generate_signals(df)
+    # 信号滞后一天：信号由 T 日收盘数据算出，T+1 日才可执行（防前视偏差）
+    signals = signals.shift(1).fillna(0)
+
+    commission = DEFAULT_COMMISSION_BPS / 10000.0
 
     # 模拟交易
     capital = initial_capital
@@ -44,29 +63,32 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
     portfolio_values = []  # 每日组合价值
 
     for i in range(len(df)):
-        price = df['Close'].iloc[i]
+        row = df.iloc[i]
+        price = row['Close']
         date = df.index[i]
         signal = signals.iloc[i]
 
         if signal == 1 and position == 0:
-            # 买入（全仓）
-            shares = int(capital / price)
+            # 买入（全仓），按当日开盘价 + 滑点成交，扣佣金
+            exec_p = _exec_price(row, 'buy', DEFAULT_SLIPPAGE_BPS)
+            shares = int(capital / (exec_p * (1 + commission)))
             if shares > 0:
-                cost = shares * price
+                cost = shares * exec_p * (1 + commission)
                 capital -= cost
                 position = shares
                 trades.append({
                     'date': date, 'action': '买入',
-                    'price': price, 'shares': shares, 'value': cost
+                    'price': exec_p, 'shares': shares, 'value': cost
                 })
 
         elif signal == -1 and position > 0:
-            # 卖出（清仓）
-            revenue = position * price
+            # 卖出（清仓），按当日开盘价 - 滑点成交，扣佣金
+            exec_p = _exec_price(row, 'sell', DEFAULT_SLIPPAGE_BPS)
+            revenue = position * exec_p * (1 - commission)
             capital += revenue
             trades.append({
                 'date': date, 'action': '卖出',
-                'price': price, 'shares': position, 'value': revenue
+                'price': exec_p, 'shares': position, 'value': revenue
             })
             position = 0
 
@@ -116,6 +138,7 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
     lines.append(f"策略: {strategy.name}")
     lines.append(f"周期: {period} ({df.index[0].strftime('%Y-%m-%d')} ~ {df.index[-1].strftime('%Y-%m-%d')})")
     lines.append(f"初始资金: ${initial_capital:,.0f}")
+    lines.append(f"成交假设: T+1 开盘价成交 | 佣金 {DEFAULT_COMMISSION_BPS:.0f}bps + 滑点 {DEFAULT_SLIPPAGE_BPS:.0f}bps")
     lines.append("")
     lines.append("【回测结果】")
     lines.append(f"  最终资产: ${final_value:,.2f}")
@@ -168,8 +191,13 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
                         initial_capital: float = 100000,
                         position_mode: str = "full",
                         position_pct: float = 100,
-                        fixed_amount: float = 10000) -> dict:
-    """执行自定义策略回测，返回结构化 dict 供前端渲染。"""
+                        fixed_amount: float = 10000,
+                        commission_bps: float = DEFAULT_COMMISSION_BPS,
+                        slippage_bps: float = DEFAULT_SLIPPAGE_BPS) -> dict:
+    """执行自定义策略回测，返回结构化 dict 供前端渲染。
+
+    成交假设：T 日收盘信号 → T+1 日开盘价 ± 滑点成交，佣金按成交额双边收取。
+    """
     df = _yf.get_history(symbol, period)
     if df.empty:
         return {"error": f"无法获取 {symbol} 的历史数据"}
@@ -178,8 +206,10 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
     if len(signals) != len(df):
         return {"error": f"信号长度 ({len(signals)}) 与数据长度 ({len(df)}) 不匹配"}
 
-    # 信号滞后一天：防止 look-ahead bias
+    # 信号滞后一天：防止 look-ahead bias（滞后日按开盘价成交）
     signals = [0] + signals[:-1]
+    commission = max(0.0, commission_bps) / 10000.0
+    slippage = max(0.0, slippage_bps)
 
     # --- 交易模拟 ---
     capital = initial_capital
@@ -192,7 +222,8 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
     liquidated_msg = ""
 
     for i in range(len(df)):
-        price = df['Close'].iloc[i]
+        row = df.iloc[i]
+        price = row['Close']
         date = df.index[i]
         signal = signals[i]
 
@@ -205,16 +236,17 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
             else:
                 buy_amount = capital
 
-            shares = int(buy_amount / price)
+            exec_p = _exec_price(row, 'buy', slippage)
+            shares = int(buy_amount / (exec_p * (1 + commission)))
             if shares > 0:
-                cost = shares * price
+                cost = shares * exec_p * (1 + commission)
                 capital -= cost
                 position = shares
                 buy_date = date
                 trades.append({
                     'date': date.strftime('%Y-%m-%d'),
                     'action': 'BUY',
-                    'price': round(price, 2),
+                    'price': round(exec_p, 2),
                     'shares': shares,
                     'value': round(cost, 2),
                     'pnl': 0,
@@ -222,7 +254,8 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
                 })
 
         elif signal == -1 and position > 0:
-            revenue = position * price
+            exec_p = _exec_price(row, 'sell', slippage)
+            revenue = position * exec_p * (1 - commission)
             last_buy = next(
                 (t for t in reversed(trades) if t['action'] == 'BUY'), None
             )
@@ -232,7 +265,7 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
             trades.append({
                 'date': date.strftime('%Y-%m-%d'),
                 'action': 'SELL',
-                'price': round(price, 2),
+                'price': round(exec_p, 2),
                 'shares': position,
                 'value': round(revenue, 2),
                 'pnl': round(pnl, 2),
@@ -338,6 +371,8 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
             "max_win": max_win,
             "max_loss": max_loss,
             "avg_holding_days": avg_holding_days,
+            "commission_bps": commission_bps,
+            "slippage_bps": slippage_bps,
         },
         "trades": trades,
         "portfolio_values": pv_list,

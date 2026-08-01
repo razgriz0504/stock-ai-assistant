@@ -448,6 +448,48 @@ def restore_vcp_schedule():
     logger.info("VCP schedule restored (RS 16:30, scan 17:00 ET)")
 
 
+# ─── 市场环境（红绿灯）定时任务 ───
+
+def add_market_regime_job(hour: int = 16, minute: int = 45):
+    """添加/更新市场环境每日快照任务（放在 RS 预计算之后，宽度可复用 RS 缓存）"""
+    scheduler.add_job(
+        _run_market_regime_job,
+        CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute, timezone=ET),
+        id="market_regime_scheduled",
+        replace_existing=True,
+    )
+    logger.info(f"Market regime job scheduled at {hour:02d}:{minute:02d} ET (mon-fri)")
+
+
+async def _run_market_regime_job():
+    """定时计算市场环境快照，状态变化时飞书推送"""
+    from app.market.regime import compute_market_snapshot
+
+    logger.info("Scheduled market regime job triggered")
+    try:
+        snap = await asyncio.to_thread(compute_market_snapshot, True)
+        state = snap["state"]
+        logger.info(f"Market regime snapshot: {state} (changed={snap['state_changed']})")
+
+        if snap["state_changed"] and _default_chat_id:
+            light = {"green": "🟢", "yellow": "🟡", "red": "🔴"}
+            reasons = "\n".join(f"- {r}" for r in snap["reasons"][:6])
+            msg = (
+                f"市场红绿灯变化: {light.get(snap['prev_state'], '')} {snap['prev_state'].upper()}"
+                f" → {light.get(state, '')} {state.upper()}\n"
+                f"{reasons}"
+            )
+            await send_text(_default_chat_id, msg)
+    except Exception as e:
+        logger.error(f"Market regime job error: {e}", exc_info=True)
+
+
+def restore_market_regime_schedule():
+    """启动时恢复市场环境定时任务（常开，16:45 ET）"""
+    add_market_regime_job(hour=16, minute=45)
+    logger.info("Market regime schedule restored (16:45 ET)")
+
+
 # ─── 存储行业研究报告定时任务 ───
 
 def add_storage_report_job(day_of_week: str = "mon", hour: int = 8, minute: int = 0):

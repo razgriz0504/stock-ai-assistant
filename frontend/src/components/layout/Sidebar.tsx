@@ -10,6 +10,8 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { path: '/', label: '仪表盘', icon: '📊' },
+  { path: '/market', label: '市场红绿灯', icon: '🚦' },
+  { path: '/portfolio', label: '持仓日志', icon: '💼' },
   { path: '/report', label: '投研周报', icon: '📋' },
   { path: '/screener', label: '选股器', icon: '🔍' },
   { path: '/sector-strength', label: '板块雷达', icon: '📡' },

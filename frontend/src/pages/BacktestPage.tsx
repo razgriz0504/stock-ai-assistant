@@ -32,6 +32,8 @@ export default function BacktestPage() {
   const [symbol, setSymbol] = useState('AAPL')
   const [period, setPeriod] = useState('1y')
   const [capital, setCapital] = useState('100000')
+  const [commissionBps, setCommissionBps] = useState('5')
+  const [slippageBps, setSlippageBps] = useState('5')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState<BacktestResult | null>(null)
@@ -51,6 +53,8 @@ export default function BacktestPage() {
         position_mode: 'full',
         position_pct: 100,
         fixed_amount: 10000,
+        commission_bps: parseFloat(commissionBps) || 0,
+        slippage_bps: parseFloat(slippageBps) || 0,
       })
       if (res.data.success) {
         setResult(res.data.result)
@@ -97,12 +101,17 @@ export default function BacktestPage() {
             </select>
           </div>
           <Input label="初始资金" type="number" value={capital} onChange={e => setCapital(e.target.value)} />
+          <Input label="佣金 (bps)" type="number" value={commissionBps} onChange={e => setCommissionBps(e.target.value)} placeholder="5" />
+          <Input label="滑点 (bps)" type="number" value={slippageBps} onChange={e => setSlippageBps(e.target.value)} placeholder="5" />
           <div className="flex items-end">
             <Button variant="primary" className="w-full" onClick={runBacktest} disabled={loading}>
               {loading ? '回测中...' : '▶ 执行回测'}
             </Button>
           </div>
         </div>
+        <p className="mt-3 text-[11px] text-gray-400 font-mono">
+          成交假设: T 日收盘信号 → T+1 日开盘价 ± 滑点成交，佣金按成交额双边收取
+        </p>
       </Card>
 
       {/* Code Editor */}

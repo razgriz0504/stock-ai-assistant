@@ -21,6 +21,8 @@ class BacktestRequest(BaseModel):
     position_mode: str = "full"
     position_pct: float = 100
     fixed_amount: float = 10000
+    commission_bps: float = 5.0   # 佣金（成交额双边，基点）
+    slippage_bps: float = 5.0     # 滑点（成交价偏移，基点）
 
 
 @router.post("/api/backtest/run")
@@ -57,6 +59,8 @@ async def run_backtest_api(req: BacktestRequest):
         position_mode=req.position_mode,
         position_pct=req.position_pct,
         fixed_amount=req.fixed_amount,
+        commission_bps=req.commission_bps,
+        slippage_bps=req.slippage_bps,
     )
 
     if "error" in bt_result:

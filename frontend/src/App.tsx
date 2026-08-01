@@ -7,6 +7,8 @@ import { AdminRoute } from '@/components/auth/AdminRoute'
 // Lazy-loaded pages
 const LoginPage = lazy(() => import('@/pages/LoginPage'))
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'))
+const MarketPage = lazy(() => import('@/pages/MarketPage'))
+const PortfolioPage = lazy(() => import('@/pages/PortfolioPage'))
 const ReportPage = lazy(() => import('@/pages/ReportPage'))
 const ScreenerPage = lazy(() => import('@/pages/ScreenerPage'))
 const SectorStrengthPage = lazy(() => import('@/pages/SectorStrengthPage'))
@@ -41,6 +43,8 @@ export default function App() {
         <Route element={<ProtectedRoute />}>
           <Route element={<AppLayout />}>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/market" element={<MarketPage />} />
+            <Route path="/portfolio" element={<PortfolioPage />} />
             <Route path="/report" element={<ReportPage />} />
             <Route path="/screener" element={<ScreenerPage />} />
             <Route path="/sector-strength" element={<SectorStrengthPage />} />

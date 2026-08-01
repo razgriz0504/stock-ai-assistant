@@ -1,6 +1,7 @@
 """RS (Relative Strength) Percentile Rating - 向量化预计算模块.
 
-将全 Universe 的 252 日涨幅在全市场中排百分位（0-100），
+采用 IBD 加权四季度算法：RS raw = 0.4×Q1 + 0.2×Q2 + 0.2×Q3 + 0.2×Q4 涨幅，
+再在全 Universe 中排百分位（0-100），
 结果缓存于内存，TTL 24h，定时任务每日收盘后刷新。
 """
 
@@ -90,25 +91,42 @@ def compute_rs_snapshot(universe: list[str]) -> dict[str, float]:
             logger.warning(f"RS computation: insufficient data rows ({len(close_df)})")
             return _rs_cache if _rs_cache else {}
 
-        # 向量化计算 252 日涨幅（用可用的最长跨度，至少 200 天）
-        lookback = min(252, len(close_df) - 1)
-        start_prices = close_df.iloc[-(lookback + 1)]
+        # ── IBD 加权四季度 RS 得分 ──
+        # RS raw = 0.4×Q1 + 0.2×Q2 + 0.2×Q3 + 0.2×Q4 涨幅（Q1 为最近一季，权重加倍，
+        # 对刚启动 1-3 个月的强势股更敏感，与 IBD/Minervini 标准 RS Rating 一致）。
+        # 历史不足 252 日的股票按可用窗口重新归一化权重（至少需要最近 63 日）。
         end_prices = close_df.iloc[-1]
+        n_rows = len(close_df)
 
-        # 过滤掉起始或结束价为 NaN/0 的
-        valid_mask = (start_prices > 0) & (end_prices > 0) & start_prices.notna() & end_prices.notna()
-        start_valid = start_prices[valid_mask]
-        end_valid = end_prices[valid_mask]
+        windows = [(63, 0.4), (126, 0.2), (189, 0.2), (252, 0.2)]
+        weighted_sum = pd.Series(0.0, index=close_df.columns)
+        weight_used = pd.Series(0.0, index=close_df.columns)
+        q1_valid = pd.Series(False, index=close_df.columns)
 
-        if start_valid.empty:
+        for lb, w in windows:
+            if n_rows <= lb:
+                continue
+            start_prices = close_df.iloc[-(lb + 1)]
+            valid_mask = (
+                (start_prices > 0) & start_prices.notna()
+                & (end_prices > 0) & end_prices.notna()
+            )
+            ret = (end_prices[valid_mask] / start_prices[valid_mask]) - 1
+            weighted_sum[ret.index] += w * ret
+            weight_used[ret.index] += w
+            if lb == 63:
+                q1_valid = valid_mask
+
+        # 至少要有最近一季（63 日）数据才参与排名
+        has_q1 = q1_valid & (weight_used > 0)
+        scored = weighted_sum[has_q1] / weight_used[has_q1]
+
+        if scored.empty:
             logger.warning("RS computation: no valid stocks for return calculation")
             return _rs_cache if _rs_cache else {}
 
-        # 一步计算 252 日涨幅
-        returns_252d = (end_valid / start_valid) - 1
-
         # 百分位排名（0-100）
-        rs_percentile = returns_252d.rank(pct=True) * 100
+        rs_percentile = scored.rank(pct=True) * 100
 
         # 转为 dict
         result = {sym: round(float(val), 2) for sym, val in rs_percentile.items() if pd.notna(val)}
@@ -131,6 +149,10 @@ def get_rs_snapshot(universe: Optional[list[str]] = None) -> dict[str, float]:
 
     如果缓存有效（< 24h），直接返回缓存。
     否则触发重新计算。
+
+    注意：百分位必须在全市场 Universe 中排名才有意义。若调用方只传入
+    少量股票（如 VCP watchlist），会自动合并选股器全量 Universe 再计算，
+    避免"在 20 只股票里排百分位"这种失真结果。
     """
     global _rs_cache, _rs_cache_ts
 
@@ -139,7 +161,17 @@ def get_rs_snapshot(universe: Optional[list[str]] = None) -> dict[str, float]:
         return _rs_cache
 
     if universe:
-        return compute_rs_snapshot(universe)
+        base = list(universe)
+        try:
+            from app.screener.universe import get_universe
+            full = get_universe()
+            if full and len(full) > len(base):
+                # 合并去重，保证排名基准是全市场而非小样本
+                base = list(dict.fromkeys(list(full) + base))
+        except Exception as e:
+            logger.warning(f"RS snapshot: failed to load full universe, "
+                           f"percentile will rank within {len(base)} symbols only: {e}")
+        return compute_rs_snapshot(base)
 
     # 缓存过期且没有传入 universe，返回过期缓存（好过空）
     if _rs_cache:

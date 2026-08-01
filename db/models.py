@@ -507,6 +507,72 @@ def get_or_create_x_accounts(db):
 
 
 # ════════════════════════════════════════════════════════════════
+# 市场环境（红绿灯）快照
+# ════════════════════════════════════════════════════════════════
+
+class MarketRegimeSnapshot(Base):
+    """市场环境每日快照（分布日/FTD/趋势/宽度 → 红绿灯状态）"""
+    __tablename__ = "market_regime_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    snapshot_date = Column(String(10), unique=True, index=True, nullable=False)  # ET 日期 YYYY-MM-DD
+    state = Column(String(10), default="yellow")        # green / yellow / red
+    prev_state = Column(String(10), default="")          # 前一快照状态（用于变化推送）
+    reasons_json = Column(Text, default="[]")            # JSON: 判定理由列表
+    index_stats_json = Column(Text, default="{}")        # JSON: 各指数分布日/趋势/FTD
+    breadth_json = Column(Text, default="{}")            # JSON: 市场宽度指标
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+# ════════════════════════════════════════════════════════════════
+# 持仓与交易日志（按用户隔离）
+# ════════════════════════════════════════════════════════════════
+
+class PortfolioSettings(Base):
+    """组合与风控设置（每用户一行）"""
+    __tablename__ = "portfolio_settings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    account_size = Column(Float, default=100000.0)       # 账户总资金 (USD)
+    risk_pct_green = Column(Float, default=1.0)          # 市场绿灯时单笔风险 %
+    risk_pct_yellow = Column(Float, default=0.5)         # 黄灯时单笔风险 %
+    risk_pct_red = Column(Float, default=0.25)           # 红灯时单笔风险 %
+    max_position_pct = Column(Float, default=25.0)       # 单一持仓市值上限 %
+    max_positions = Column(Integer, default=8)           # 最大同时持仓数
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class TradeRecord(Base):
+    """交易日志（买卖流水，平均成本法聚合出持仓）"""
+    __tablename__ = "trade_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    symbol = Column(String(10), nullable=False, index=True)
+    side = Column(String(4), nullable=False)             # buy / sell
+    qty = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    commission = Column(Float, default=0.0)
+    trade_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    setup = Column(String(32), default="")               # vcp_breakout / pullback / other
+    initial_stop = Column(Float, nullable=True)          # 买入时的初始止损价
+    note = Column(String(500), default="")
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class PositionStop(Base):
+    """持仓当前止损价（可随移动止损更新，user_id+symbol 唯一）"""
+    __tablename__ = "position_stops"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    symbol = Column(String(10), nullable=False, index=True)
+    stop_price = Column(Float, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+# ════════════════════════════════════════════════════════════════
 # 账户体系：用户与 Chat 历史
 # ════════════════════════════════════════════════════════════════
 
