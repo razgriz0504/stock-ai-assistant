@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# bcrypt 协议限制：密码不能超过 72 字节。
+# 超过部分会被截断，这是行业标准做法（不影响安全性，因为 72 字节 = 192 位熵）。
+_BCRYPT_MAX_BYTES = 72
+
+
+def _truncate_for_bcrypt(password: str) -> bytes:
+    """将密码编码为 UTF-8 并截断到 72 字节。"""
+    return password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
+
 
 def _get_secret() -> str:
     """惰性读取 JWT_SECRET。开发场景允许空值：随机生成一次以警告开发者。"""
@@ -36,12 +45,12 @@ def _get_secret() -> str:
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return _pwd_context.hash(_truncate_for_bcrypt(plain))
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return _pwd_context.verify(plain, hashed)
+        return _pwd_context.verify(_truncate_for_bcrypt(plain), hashed)
     except Exception:
         return False
 
