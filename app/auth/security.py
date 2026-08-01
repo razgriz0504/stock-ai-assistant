@@ -1,6 +1,6 @@
 """密码哈希与 JWT 编解码。
 
-- 密码：bcrypt（passlib）。
+- 密码：bcrypt（直接使用 bcrypt 库；passlib 1.7.4 与 bcrypt 4.1+ 不兼容，已弃用）。
 - Token：HS256 JWT，claim 结构 {sub: username, uid: user_id, role: 'admin'|'user', exp}。
 """
 from __future__ import annotations
@@ -10,14 +10,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from config import settings
 
 logger = logging.getLogger(__name__)
-
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # bcrypt 协议限制：密码不能超过 72 字节。
 # 超过部分会被截断，这是行业标准做法（不影响安全性，因为 72 字节 = 192 位熵）。
@@ -45,12 +43,12 @@ def _get_secret() -> str:
 
 
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(_truncate_for_bcrypt(plain))
+    return bcrypt.hashpw(_truncate_for_bcrypt(plain), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     try:
-        return _pwd_context.verify(_truncate_for_bcrypt(plain), hashed)
+        return bcrypt.checkpw(_truncate_for_bcrypt(plain), hashed.encode("utf-8"))
     except Exception:
         return False
 

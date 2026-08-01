@@ -5,7 +5,7 @@
 ## 关键决策
 
 - 邀请方式：**admin 手动在管理页创建账号**，把凭证告诉家人朋友。
-- 密码存储：`passlib[bcrypt]`。
+- 密码存储：`bcrypt`（直接使用 bcrypt 库；passlib 与新版 bcrypt 不兼容已弃用）。
 - Token：JWT（`python-jose[cryptography]`, HS256），有效期 `JWT_EXPIRE_DAYS` 天，前端存 `localStorage`。
 - 首个 admin：`.env` 里 `INITIAL_ADMIN_USERNAME` + `INITIAL_ADMIN_PASSWORD`，**首次启动 users 表为空时自动播种**，播种后不再读取。
 - 部署无需改 Nginx，认证全部在 FastAPI 层；HTTPS 请自行在网关配好。

@@ -6,7 +6,7 @@
 #
 # 该脚本会：
 #   1. git pull 拉最新代码
-#   2. 在 venv 里 pip install -r requirements.txt（新增 jose/passlib 依赖）
+#   2. 在 venv 里 pip install -r requirements.txt（新增 jose/bcrypt 依赖）
 #   3. 前端 npm ci && npm run build（如果需要）
 #   4. 幂等地把 JWT / INITIAL_ADMIN 变量追加到 .env
 #   5. sudo systemctl restart stock-ai
