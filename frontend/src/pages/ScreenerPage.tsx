@@ -614,8 +614,45 @@ const SEPA_INDICATOR_COLS = [
   { key: '_sma200_slope', label: 'SMA200斜率', tooltip: '200日线趋势斜率(%/日)' },
 ]
 
+// ── Futu 导出：symbol → 富途格式 (代码+市场) ──
+function toFutuEntry(symbol: string, name: string, screenerMarket: import('@/stores/screenerStore').Market): { code: string; name: string; market: string } {
+  if (screenerMarket === 'us') {
+    return { code: `${symbol}.US`, name, market: '美股' }
+  }
+  // A 股：按代码前缀推断交易所
+  const p3 = symbol.substring(0, 3)
+  if (symbol.startsWith('60') || symbol.startsWith('68')) {
+    return { code: `${symbol}.SH`, name, market: '上海' }
+  }
+  if (symbol.startsWith('00') || symbol.startsWith('30')) {
+    return { code: `${symbol}.SZ`, name, market: '深圳' }
+  }
+  if (['920', '830', '831', '832', '833', '834', '835', '836', '837', '838', '839', '870', '871', '872', '873'].includes(p3)) {
+    return { code: `${symbol}.BJ`, name, market: '北交所' }
+  }
+  return { code: `${symbol}.SZ`, name, market: '深圳' }
+}
+
+function exportFutuCSV(results: import('@/stores/screenerStore').ScreenerResult[], screenerMarket: import('@/stores/screenerStore').Market) {
+  const header = '\uFEFF"代码","名称","市场"'
+  const rows = results.map(r => {
+    const cnName = getCnName(r.symbol, r.name)
+    const { code, market } = toFutuEntry(r.symbol, cnName, screenerMarket)
+    return `"${code}","${cnName}","${market}"`
+  })
+  const csv = [header, ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  const today = new Date().toISOString().slice(0, 10)
+  a.download = `screener_futu_${screenerMarket}_${today}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function ResultsTab() {
-  const { results, totalPassed, runId, runs, currentRunFilters, currentRunVersion, presets, activePresetId, loadRunResults, fetchRuns } = useScreenerStore()
+  const { results, totalPassed, runId, runs, currentRunFilters, currentRunVersion, presets, activePresetId, market, loadRunResults, fetchRuns } = useScreenerStore()
   const { items: watchItems, fetch: fetchWatchlist, add: addWatch, remove: removeWatch } = useWatchlistStore()
   const [sortBy, setSortBy] = useState<string>('score')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
@@ -749,6 +786,15 @@ function ResultsTab() {
             }`}
           >
             {groupBySector ? '✓ 按板块聚合' : '按板块聚合'}
+          </button>
+          {/* Export Futu CSV */}
+          <button
+            onClick={() => exportFutuCSV(results, market)}
+            disabled={results.length === 0}
+            className="px-3 py-1.5 text-xs rounded-md border border-cream-300 bg-white text-gray-600 hover:border-copper hover:text-copper transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="导出为富途牛牛导入格式 (代码,名称,市场)"
+          >
+            ⬇ 导出 Futu
           </button>
         </div>
         <div className="flex items-center gap-3">
