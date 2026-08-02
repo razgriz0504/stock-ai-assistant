@@ -10,9 +10,9 @@
 4. 市场宽度：全 Universe 站上 50/200MA 比例、52 周新高-新低、RS>=80 数量。
 
 红绿灯规则（取两大指数中较差者，宽度做降级修正）：
-- RED    : 有效分布日 >= 6，或指数同时跌破 50MA 与 200MA
-- YELLOW : 分布日 4-5，或跌破 50MA，或 %>200MA 宽度 < 40%
-- GREEN  : 其余（趋势健康且分布日 <= 3）
+- RED    : 有效分布日 >= 5，或指数同时跌破 50MA 与 200MA
+- YELLOW : 分布日 3-4，或跌破 50MA，或 %>200MA 宽度 < 40%
+- GREEN  : 其余（趋势健康且分布日 <= 2）
 """
 
 import json
@@ -239,10 +239,10 @@ def classify_regime(index_stats: dict[str, dict], breadth: dict | None) -> tuple
         above_50 = trend.get("above_ma50", False)
         above_200 = trend.get("above_ma200", False)
 
-        if dd >= 6:
-            escalate("red", f"{name} 分布日 {dd} 个（≥6，机构大举派发）")
-        elif dd >= 4:
-            escalate("yellow", f"{name} 分布日 {dd} 个（4-5，派发压力上升）")
+        if dd >= 5:
+            escalate("red", f"{name} 分布日 {dd} 个（≥5，机构大举派发）")
+        elif dd >= 3:
+            escalate("yellow", f"{name} 分布日 {dd} 个（3-4，派发压力上升）")
 
         if not above_50 and not above_200:
             escalate("red", f"{name} 同时跌破 50MA 与 200MA")

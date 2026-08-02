@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # 默认 LLM 模型
     default_llm: str = "gemini/gemini-3.1-pro-preview"
 
+    # 回测参数
+    risk_free_rate: float = 0.04  # 年化无风险利率（默认 4%）
+
     # 图表临时文件目录
     charts_dir: str = "./charts"
 

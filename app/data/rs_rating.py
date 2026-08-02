@@ -91,9 +91,10 @@ def compute_rs_snapshot(universe: list[str]) -> dict[str, float]:
             logger.warning(f"RS computation: insufficient data rows ({len(close_df)})")
             return _rs_cache if _rs_cache else {}
 
-        # ── IBD 加权四季度 RS 得分 ──
-        # RS raw = 0.4×Q1 + 0.2×Q2 + 0.2×Q3 + 0.2×Q4 涨幅（Q1 为最近一季，权重加倍，
-        # 对刚启动 1-3 个月的强势股更敏感，与 IBD/Minervini 标准 RS Rating 一致）。
+        # ── IBD 加权多周期 RS 得分 ──
+        # RS raw = 0.4×Q1 + 0.2×Q2 + 0.2×Q3 + 0.2×Q4 涨幅
+        # （Q1 为最近 63 交易日，权重加倍，对刚启动 1-3 个月的强势股更敏感；
+        #   此为交易日近似，非严格日历季度，与 IBD/Minervini 标准 RS Rating 行为一致）。
         # 历史不足 252 日的股票按可用窗口重新归一化权重（至少需要最近 63 日）。
         end_prices = close_df.iloc[-1]
         n_rows = len(close_df)

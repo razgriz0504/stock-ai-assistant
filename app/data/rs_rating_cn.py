@@ -1,14 +1,13 @@
 """A 股 RS (Relative Strength) Percentile - 宇宙内百分位排名.
 
 对齐美股 rs_rating.py 的接口 (get_rs_snapshot / compute_rs_snapshot),
-差异:
+采用 IBD 加权多周期算法（交易日近似）:
+- RS raw = 0.4×63日 + 0.2×126日 + 0.2×189日 + 0.2×252日 涨幅
+- 再在全 Universe 中排百分位（0-100）
 - 数据源: akshare 而非 yfinance
-- 基准无关: 直接用 252 日涨幅在 universe 内排 percentile (与 rs_rating.py 一致)
 - 缓存独立于美股, TTL 24h
 
-之所以不引入沪深300 作为基准算超额收益, 是因为 percentile rank 本质是
-"universe 内相对排序", 涨得多的自然靠前, 引入基准反而会引入基准漂移噪声,
-与美股 rs_rating.py 保持一致行为.
+与美股 rs_rating.py 完全一致的加权逻辑，差异仅在于数据源。
 """
 
 import logging
@@ -50,7 +49,8 @@ def _fetch_close_history(symbol: str, start_date: str, end_date: str) -> Optiona
         # 截取日期范围
         s = s[(s.index >= pd.Timestamp(start_date)) & (s.index <= pd.Timestamp(end_date))]
 
-        if len(s) < 100:
+        # 至少需要 200 个有效交易日数据，确保 252 日涨幅计算可靠
+        if len(s) < 200:
             return None
         s.name = code
         return s
@@ -62,7 +62,10 @@ def _fetch_close_history(symbol: str, start_date: str, end_date: str) -> Optiona
 def compute_rs_snapshot_cn(universe: list[str], max_workers: int = 12) -> dict[str, float]:
     """计算 A 股 universe 的 RS Percentile (0-100).
 
-    252 日涨幅 → universe 内排 rank pct → *100.
+    与美股 rs_rating.py 完全一致:
+    - IBD 加权多周期: 0.4×63日 + 0.2×126日 + 0.2×189日 + 0.2×252日 涨幅
+    - 加权复合收益 → universe 内 rank pct → *100
+    - 至少要有最近一季（63 日）数据才参与排名
     """
     global _rs_cache, _rs_cache_ts
 
@@ -105,20 +108,41 @@ def compute_rs_snapshot_cn(universe: list[str], max_workers: int = 12) -> dict[s
         logger.warning(f"CN RS: insufficient rows ({len(close_df)})")
         return _rs_cache if _rs_cache else {}
 
-    lookback = min(252, len(close_df) - 1)
-    start_prices = close_df.iloc[-(lookback + 1)]
+    # ── IBD 加权多周期 RS 得分（与美股 rs_rating.py 完全一致）──
+    # RS raw = 0.4×Q1 + 0.2×Q2 + 0.2×Q3 + 0.2×Q4 涨幅（交易日近似）
+    # Q1 为最近一季（63 交易日），权重加倍，对刚启动的强势股更敏感。
     end_prices = close_df.iloc[-1]
+    n_rows = len(close_df)
 
-    valid = (start_prices > 0) & (end_prices > 0) & start_prices.notna() & end_prices.notna()
-    start_valid = start_prices[valid]
-    end_valid = end_prices[valid]
+    windows = [(63, 0.4), (126, 0.2), (189, 0.2), (252, 0.2)]
+    weighted_sum = pd.Series(0.0, index=close_df.columns)
+    weight_used = pd.Series(0.0, index=close_df.columns)
+    q1_valid = pd.Series(False, index=close_df.columns)
 
-    if start_valid.empty:
-        logger.warning("CN RS: no valid stocks")
+    for lb, w in windows:
+        if n_rows <= lb:
+            continue
+        start_prices = close_df.iloc[-(lb + 1)]
+        valid_mask = (
+            (start_prices > 0) & start_prices.notna()
+            & (end_prices > 0) & end_prices.notna()
+        )
+        ret = (end_prices[valid_mask] / start_prices[valid_mask]) - 1
+        weighted_sum[ret.index] += w * ret
+        weight_used[ret.index] += w
+        if lb == 63:
+            q1_valid = valid_mask
+
+    # 至少要有最近一季（63 日）数据才参与排名
+    has_q1 = q1_valid & (weight_used > 0)
+    scored = weighted_sum[has_q1] / weight_used[has_q1]
+
+    if scored.empty:
+        logger.warning("CN RS: no valid stocks for weighted return calculation")
         return _rs_cache if _rs_cache else {}
 
-    returns_252d = (end_valid / start_valid) - 1
-    rs_percentile = returns_252d.rank(pct=True) * 100
+    # 百分位排名（0-100）
+    rs_percentile = scored.rank(pct=True) * 100
 
     result = {sym: round(float(v), 2) for sym, v in rs_percentile.items() if pd.notna(v)}
 

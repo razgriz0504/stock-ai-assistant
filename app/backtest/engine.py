@@ -110,9 +110,14 @@ def run_backtest(symbol: str, strategy_name: str, period: str = "1y",
     drawdown = (portfolio_series - cummax) / cummax
     max_drawdown = drawdown.min() * 100
 
-    # 夏普比率 (假设无风险利率 4%)
+    # 夏普比率 (无风险利率从配置读取)
+    try:
+        from config import settings
+        risk_free = settings.risk_free_rate
+    except Exception:
+        risk_free = 0.04
     if len(daily_returns) > 0 and daily_returns.std() != 0:
-        sharpe = (daily_returns.mean() * 252 - 0.04) / (daily_returns.std() * np.sqrt(252))
+        sharpe = (daily_returns.mean() * 252 - risk_free) / (daily_returns.std() * np.sqrt(252))
     else:
         sharpe = 0
 
@@ -297,8 +302,14 @@ def run_custom_backtest(symbol: str, signals: list, period: str = "1y",
     drawdown = (portfolio_series - cummax) / cummax
     max_drawdown = drawdown.min() * 100
 
+    # 夏普比率 (无风险利率从配置读取)
+    try:
+        from config import settings as _cfg
+        risk_free = _cfg.risk_free_rate
+    except Exception:
+        risk_free = 0.04
     if len(daily_returns) > 0 and daily_returns.std() != 0:
-        sharpe = (daily_returns.mean() * 252 - 0.04) / (daily_returns.std() * np.sqrt(252))
+        sharpe = (daily_returns.mean() * 252 - risk_free) / (daily_returns.std() * np.sqrt(252))
     else:
         sharpe = 0
 

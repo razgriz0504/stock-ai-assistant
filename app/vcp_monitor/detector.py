@@ -404,14 +404,18 @@ def _calculate_score(
     elif volume_dry_ratio <= 0.8:
         score += 8
 
-    # 3. Base duration (15 pts) - 5-15 周最优；Minervini 认可的有效基底为 3-65 周
+    # 3. Base duration (15 pts) - Minervini 偏好 7-25 周基底
     base_days = len(base_df)
     if 25 <= base_days <= 75:
-        score += 15
-    elif 15 <= base_days <= 325:   # 3-65 周（325 交易日），长基底同样有效
-        score += 10
+        score += 15       # 5-15 周：经典 VCP 基底长度
+    elif 76 <= base_days <= 125:
+        score += 12       # 15-25 周：偏长但有效的基底
+    elif 15 <= base_days <= 24:
+        score += 10       # 3-5 周：偏短，可能只是浅回调
+    elif 126 <= base_days <= 200:
+        score += 8        # 25-40 周：长基底，需要更明确的价格收紧
     elif base_days > 5:
-        score += 5
+        score += 4        # 其他有效长度
 
     # 4. RS rating (20 pts)
     if rs_percentile >= 90:

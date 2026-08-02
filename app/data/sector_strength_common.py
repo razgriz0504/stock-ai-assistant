@@ -90,7 +90,8 @@ def _compute_logbias(df: pd.DataFrame, span: int = 20, series_len: int = 130) ->
     closes = df["Close"].dropna()
     closes = closes[closes > 0]
 
-    warmup_period = span * 2
+    # EMA 收敛通常需要 ~4×span 个数据点，确保早期值稳定
+    warmup_period = span * 4
     if len(closes) < warmup_period:
         return {"value": None, "zone": "unknown", "series": [], "dates": [],
                 "log_close": [], "ema": []}
