@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 # ─── TTL 缓存装饰器（简易，进程内） ───
-def _ttl_cache(ttl: float) -> Callable:
+def _ttl_cache(ttl: float, empty_ttl: float = 5.0) -> Callable:
+    """TTL 缓存；空结果（空 DataFrame/dict/None）只短缓存，避免瞬时失败锁死页面。"""
     def decorator(func: Callable) -> Callable:
-        cache: dict[tuple, tuple[float, Any]] = {}
+        cache: dict[tuple, tuple[float, float, Any]] = {}
         lock = threading.Lock()
 
         def wrapper(*args, **kwargs):
@@ -35,11 +36,15 @@ def _ttl_cache(ttl: float) -> Callable:
             now = time.time()
             with lock:
                 hit = cache.get(key)
-                if hit and now - hit[0] < ttl:
-                    return hit[1]
+                if hit and now - hit[0] < hit[1]:
+                    return hit[2]
             result = func(*args, **kwargs)
+            empty = result is None or (
+                isinstance(result, pd.DataFrame) and result.empty
+            ) or (isinstance(result, dict) and not result) or result == ""
+            eff_ttl = empty_ttl if empty else ttl
             with lock:
-                cache[key] = (now, result)
+                cache[key] = (now, eff_ttl, result)
             return result
 
         wrapper.__name__ = func.__name__  # type: ignore[attr-defined]
@@ -297,11 +302,13 @@ class FutuProvider:
                 return pd.DataFrame()
             static_df = pd.concat(frames, ignore_index=True)
 
-            # 批量快照（单次上限 400 只，分片）
+            # 批量快照（单次上限 400 只，分片；失败重试一次）
             codes = static_df["code"].tolist()
             snap_parts = []
             for i in range(0, len(codes), 400):
                 ret, snap_df = q.get_market_snapshot(codes[i:i + 400])
+                if ret != RET_OK:
+                    ret, snap_df = q.get_market_snapshot(codes[i:i + 400])
                 if ret != RET_OK:
                     logger.warning(f"[futu] 期权快照失败：{snap_df}")
                     continue
@@ -327,6 +334,8 @@ class FutuProvider:
             return merged
         except Exception as e:
             logger.warning(f"[futu] get_option_chain_data 异常：{e}")
+            # 连接可能已失效（如 OpenD 重启），重置以便下次重建
+            self._quote = None
             return pd.DataFrame()
 
     # ─── 板块：列表 ───
