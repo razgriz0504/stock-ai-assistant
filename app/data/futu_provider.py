@@ -276,12 +276,23 @@ class FutuProvider:
                 logger.warning(f"[futu] get_option_expiration_date 失败：{expiries}")
                 return pd.DataFrame()
 
+            # 富途返回 DataFrame（列 strike_time），兼容 list 兜底
+            if isinstance(expiries, pd.DataFrame):
+                if expiries.empty or "strike_time" not in expiries.columns:
+                    logger.warning("[futu] get_option_expiration_date 无 strike_time 列")
+                    return pd.DataFrame()
+                exp_list = [str(e) for e in expiries["strike_time"]]
+            else:
+                exp_list = [str(e) for e in expiries]
+
             frames = []
-            for exp in sorted([str(e) for e in expiries])[:max_expiries]:
+            for exp in sorted(exp_list)[:max_expiries]:
                 # option_type 缺省 = ALL，一次拿回 Call + Put
                 ret, chain_df = q.get_option_chain(code, start=exp, end=exp)
                 if ret == RET_OK and isinstance(chain_df, pd.DataFrame) and not chain_df.empty:
                     frames.append(chain_df)
+                elif ret != RET_OK:
+                    logger.warning(f"[futu] get_option_chain 失败 {exp}：{chain_df}")
             if not frames:
                 return pd.DataFrame()
             static_df = pd.concat(frames, ignore_index=True)
