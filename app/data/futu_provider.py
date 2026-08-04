@@ -255,6 +255,69 @@ class FutuProvider:
             logger.warning(f"[futu] get_rt_data 异常：{e}")
             return pd.DataFrame()
 
+    # ─── 期权：静态链 + 快照 merge（Net GEX 计算用） ───
+    @_ttl_cache(ttl=60.0)
+    def get_option_chain_data(self, code: str, max_expiries: int = 6) -> pd.DataFrame:
+        """期权链静态信息 + 行情快照合并。
+
+        Futu get_option_chain 仅返回静态信息（code/lot_size/option_type/
+        strike_time/strike_price 等），不含 last_price 与 open_interest；
+        因此用返回的期权代码批量调 get_market_snapshot 补齐行情后 merge。
+        返回列：code/expire_date/strike_price/option_type/lot_size/
+        last_price/open_interest/iv_snap。
+        """
+        q = self._get_quote()
+        if q is None or not code:
+            return pd.DataFrame()
+        try:
+            from futu import RET_OK
+            ret, expiries = q.get_option_expiration_date(code)
+            if ret != RET_OK or expiries is None:
+                logger.warning(f"[futu] get_option_expiration_date 失败：{expiries}")
+                return pd.DataFrame()
+
+            frames = []
+            for exp in sorted([str(e) for e in expiries])[:max_expiries]:
+                # option_type 缺省 = ALL，一次拿回 Call + Put
+                ret, chain_df = q.get_option_chain(code, start=exp, end=exp)
+                if ret == RET_OK and isinstance(chain_df, pd.DataFrame) and not chain_df.empty:
+                    frames.append(chain_df)
+            if not frames:
+                return pd.DataFrame()
+            static_df = pd.concat(frames, ignore_index=True)
+
+            # 批量快照（单次上限 400 只，分片）
+            codes = static_df["code"].tolist()
+            snap_parts = []
+            for i in range(0, len(codes), 400):
+                ret, snap_df = q.get_market_snapshot(codes[i:i + 400])
+                if ret != RET_OK:
+                    logger.warning(f"[futu] 期权快照失败：{snap_df}")
+                    continue
+                snap_parts.append(snap_df)
+            if not snap_parts:
+                return pd.DataFrame()
+            snap_df = pd.concat(snap_parts, ignore_index=True)
+
+            # 只挑快照所需列 merge，避免 name/option_type/strike_time 重叠列生成 _x/_y
+            snap_cols = [c for c in (
+                "code", "last_price", "option_open_interest",
+                "option_implied_volatility",
+            ) if c in snap_df.columns]
+            merged = pd.merge(static_df, snap_df[snap_cols], on="code", how="inner")
+
+            # 到期日字段名统一（富途静态链实际字段为 strike_time，yyyy-MM-dd）
+            if "expire_date" not in merged.columns and "strike_time" in merged.columns:
+                merged.rename(columns={"strike_time": "expire_date"}, inplace=True)
+            merged.rename(columns={
+                "option_open_interest": "open_interest",
+                "option_implied_volatility": "iv_snap",
+            }, inplace=True)
+            return merged
+        except Exception as e:
+            logger.warning(f"[futu] get_option_chain_data 异常：{e}")
+            return pd.DataFrame()
+
     # ─── 板块：列表 ───
     @_ttl_cache(ttl=300.0)
     def get_plate_list(self, market: str = "US", plate_class: str = "INDUSTRY") -> pd.DataFrame:

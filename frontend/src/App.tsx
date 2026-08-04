@@ -15,6 +15,7 @@ const SectorStrengthPage = lazy(() => import('@/pages/SectorStrengthPage'))
 const VcpMonitorPage = lazy(() => import('@/pages/VcpMonitorPage'))
 const StorageReportPage = lazy(() => import('@/pages/StorageReportPage'))
 const FutuPage = lazy(() => import('@/pages/FutuPage'))
+const GexPage = lazy(() => import('@/pages/GexPage'))
 const BacktestPage = lazy(() => import('@/pages/BacktestPage'))
 const XMonitorPage = lazy(() => import('@/pages/XMonitorPage'))
 const WatchlistPage = lazy(() => import('@/pages/WatchlistPage'))
@@ -58,6 +59,7 @@ export default function App() {
 
             {/* 仅管理员 */}
             <Route element={<AdminRoute />}>
+              <Route path="/gex" element={<GexPage />} />
               <Route path="/futu" element={<FutuPage />} />
               <Route path="/report-admin" element={<ReportAdminPage />} />
               <Route path="/settings" element={<SettingsPage />} />

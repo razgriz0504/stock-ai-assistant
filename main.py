@@ -26,6 +26,7 @@ from app.api.auth_api import router as auth_router
 from app.api.user_admin_api import router as user_admin_router
 from app.api.market_api import router as market_router
 from app.api.portfolio_api import router as portfolio_router
+from app.api.gex_api import router as gex_router
 from app.auth.seed import ensure_initial_admin
 from app.monitor.scheduler import (
     start_scheduler, stop_scheduler, restore_report_schedule,
@@ -118,6 +119,7 @@ app.include_router(auth_router)
 app.include_router(user_admin_router)
 app.include_router(market_router)
 app.include_router(portfolio_router)
+app.include_router(gex_router)
 
 
 @app.get("/")

@@ -16,6 +16,7 @@ const navItems: NavItem[] = [
   { path: '/screener', label: '选股器', icon: '🔍' },
   { path: '/sector-strength', label: '板块雷达', icon: '📡' },
   { path: '/vcp-monitor', label: 'VCP 监控', icon: '📉' },
+  { path: '/gex', label: 'GEX 敞口', icon: '⚡', adminOnly: true },
   { path: '/storage-report', label: '存储行业', icon: '💾' },
   // { path: '/futu', label: '富途看板', icon: '🐂', adminOnly: true }, // 暂时隐藏
   { path: '/backtest', label: '策略回测', icon: '📈' },
